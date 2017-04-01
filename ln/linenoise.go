@@ -329,6 +329,29 @@ func (l *linenoise) edit(
 
 }
 
+// Call the provided function in a loop.
+// Exit when the function returns true or when the exit key is pressed.
+// Returns true when the loop function completes, false for early exit.
+func (ln *linenoise) Loop(fn func() bool, exit_key rune) bool {
+	err := ln.enable_rawmode(STDIN)
+	if err != nil {
+		fmt.Printf("enable rawmode error %s\n", err)
+		return false
+	}
+	defer ln.disable_rawmode(STDIN)
+	for true {
+		if fn() {
+			// the loop function has completed
+			return true
+		}
+		if get_rune(STDIN, &TIMEOUT_10ms) == exit_key {
+			// the loop has been cancelled
+			return false
+		}
+	}
+	return false
+}
+
 // Print scan codes on screen for debugging/development purposes
 func (ln *linenoise) PrintKeycodes() {
 
@@ -379,6 +402,11 @@ func (ln *linenoise) PrintKeycodes() {
 			break
 		}
 	}
+}
+
+// Set multiline mode
+func (ln *linenoise) SetMultiline(mode bool) {
+	ln.mlmode = mode
 }
 
 //-----------------------------------------------------------------------------
