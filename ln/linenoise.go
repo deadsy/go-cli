@@ -374,15 +374,14 @@ func (ls *linestate) String() string {
 //-----------------------------------------------------------------------------
 
 type linenoise struct {
-	history        []string     //list of history strings
-	history_maxlen int          // maximum number of history entries
-	rawmode        bool         // are we in raw mode?
-	mlmode         bool         // are we in multiline mode?
-	saved_mode     *raw.Termios // saved terminal mode
-
-	//self.completion_callback = None // callback function for tab completion
-	//self.hints_callback = None      // callback function for hints
-	//self.hotkey = None              // character for hotkey
+	history             []string              //list of history strings
+	history_maxlen      int                   // maximum number of history entries
+	rawmode             bool                  // are we in raw mode?
+	mlmode              bool                  // are we in multiline mode?
+	saved_mode          *raw.Termios          // saved terminal mode
+	completion_callback func(string) []string // callback function for tab completion
+	hints_callback      func(string) *Hint    // callback function for hints
+	hotkey              rune                  // character for hotkey
 }
 
 func NewLineNoise() *linenoise {
@@ -414,9 +413,13 @@ func (l *linenoise) disable_rawmode(fd int) error {
 	return nil
 }
 
+//-----------------------------------------------------------------------------
+
 // Restore STDIN to the orignal mode
 func (l *linenoise) atexit() {
 }
+
+//-----------------------------------------------------------------------------
 
 // edit a line in raw mode
 func (l *linenoise) edit(
@@ -424,7 +427,7 @@ func (l *linenoise) edit(
 	ofd int, // output file descriptor
 	prompt string, // line prompt string
 	s string, // initial line string
-) {
+) *string {
 	// create the line state
 	ls := NewLineState(ifd, ofd, prompt, l)
 	// set and output the initial line
@@ -433,7 +436,54 @@ func (l *linenoise) edit(
 	// The latest history entry is always our current buffer
 	l.HistoryAdd(ls.String())
 
+	return nil
 }
+
+//-----------------------------------------------------------------------------
+
+// Read a line from stdin in raw mode.
+func (l *linenoise) read_raw(prompt, s string) *string {
+
+	// set rawmode for stdin
+	err := l.enable_rawmode(STDIN)
+	if err != nil {
+		log.Printf("enable rawmode error %s\n", err)
+		return nil
+	}
+
+	line := l.edit(STDIN, STDOUT, prompt, s)
+
+	l.disable_rawmode(STDIN)
+
+	fmt.Printf("\r\n")
+
+	return line
+}
+
+// Read a line. Return "" on EOF.
+func (l *linenoise) Read(prompt, s string) *string {
+
+	/*
+
+	  if not os.isatty(_STDIN) {
+	      // Not a tty. Read from a file/pipe.
+	      s = sys.stdin.readline().strip('\n')
+	      return (s, None)[s == '']
+	  } else if unsupported_term() {
+	      // Not a terminal we know about, so basic line reading.
+	      try:
+	        s = raw_input(prompt)
+	      except EOFError:
+	        s = None
+	      return s
+	  }
+
+	*/
+
+	return l.read_raw(prompt, s)
+}
+
+//-----------------------------------------------------------------------------
 
 // Call the provided function in a loop.
 // Exit when the function returns true or when the exit key is pressed.
@@ -471,6 +521,9 @@ func (l *linenoise) Loop(fn func() bool, exit_key rune) bool {
 	l.disable_rawmode(STDIN)
 	return rc
 }
+
+//-----------------------------------------------------------------------------
+// Key Code Debugging
 
 // Print scan codes on screen for debugging/development purposes
 func (l *linenoise) PrintKeycodes() {
@@ -528,10 +581,37 @@ func (l *linenoise) PrintKeycodes() {
 	l.disable_rawmode(STDIN)
 }
 
-// Set multiline mode
-func (ln *linenoise) SetMultiline(mode bool) {
-	ln.mlmode = mode
+//-----------------------------------------------------------------------------
+
+type Hint struct {
+	Hint  string
+	Color int
+	Bold  bool
 }
+
+// Set the completion callback function.
+func (l *linenoise) SetCompletionCallback(fn func(string) []string) {
+	l.completion_callback = fn
+}
+
+// Set the hints callback function.
+func (l *linenoise) SetHintsCallback(fn func(string) *Hint) {
+	l.hints_callback = fn
+}
+
+// Set multiline mode
+func (l *linenoise) SetMultiline(mode bool) {
+	l.mlmode = mode
+}
+
+// Set the hotkey. A hotkey will cause line editing to exit.
+// The hotkey will be appended to the line buffer but not displayed.
+func (l *linenoise) SetHotkey(key rune) {
+	l.hotkey = key
+}
+
+//-----------------------------------------------------------------------------
+// Command History
 
 // Set a history entry by index number.
 func (l *linenoise) HistorySet(idx int, line string) {
@@ -638,13 +718,13 @@ func (l *linenoise) HistoryLoad(fname string) {
 		log.Printf("%s is not a regular file\n", fname)
 		return
 	}
-	l.history = make([]string, 0, l.history_maxlen)
 	f, err := os.Open(fname)
 	if err != nil {
 		log.Printf("%s error on open %s\n", fname, err)
 		return
 	}
 	b := bufio.NewReader(f)
+	l.history = make([]string, 0, l.history_maxlen)
 	for {
 		s, err := b.ReadString('\n')
 		if err == nil || err == io.EOF {
