@@ -55,6 +55,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Load history from file. The history file is a plain text file
+	// where entries are separated by newlines.
+	l.HistoryLoad("history.txt")
+
+	for i, s := range l.HistoryList() {
+		fmt.Printf("%d: %s\n", i, s)
+	}
+
+	l.HistorySave("history.txt")
+
 	os.Exit(0)
 }
 

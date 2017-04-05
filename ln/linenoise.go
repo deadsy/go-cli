@@ -13,9 +13,12 @@ Based on: http://github.com/antirez/linenoise
 package ln
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"syscall"
 	"unicode"
 
@@ -364,6 +367,10 @@ func (ls *linestate) edit_set(s string) {
 	ls.refresh_line()
 }
 
+func (ls *linestate) String() string {
+	return string(ls.buf)
+}
+
 //-----------------------------------------------------------------------------
 
 type linenoise struct {
@@ -418,13 +425,13 @@ func (l *linenoise) edit(
 	prompt string, // line prompt string
 	s string, // initial line string
 ) {
-
 	// create the line state
-
 	ls := NewLineState(ifd, ofd, prompt, l)
-
 	// set and output the initial line
 	ls.edit_set(s)
+
+	// The latest history entry is always our current buffer
+	l.HistoryAdd(ls.String())
 
 }
 
@@ -524,6 +531,135 @@ func (l *linenoise) PrintKeycodes() {
 // Set multiline mode
 func (ln *linenoise) SetMultiline(mode bool) {
 	ln.mlmode = mode
+}
+
+// Set a history entry by index number.
+func (l *linenoise) HistorySet(idx int, line string) {
+	l.history[len(l.history)-1-idx] = line
+}
+
+// Get a history entry by index number.
+func (l *linenoise) HistoryGet(idx int) string {
+	return l.history[len(l.history)-1-idx]
+}
+
+// Return the full history list.
+func (l *linenoise) HistoryList() []string {
+	return l.history
+}
+
+// Return next history item.
+func (l *linenoise) HistoryNext(ls *linestate) string {
+	if len(l.history) == 0 {
+		return ""
+	}
+	// update the current history entry with the line buffer
+	l.HistorySet(ls.history_idx, ls.String())
+	ls.history_idx -= 1
+	// next history item
+	if ls.history_idx < 0 {
+		ls.history_idx = 0
+	}
+	return l.HistoryGet(ls.history_idx)
+}
+
+// Return previous history item.
+func (l *linenoise) HistoryPrev(ls *linestate) string {
+	if len(l.history) == 0 {
+		return ""
+	}
+	// update the current history entry with the line buffer
+	l.HistorySet(ls.history_idx, ls.String())
+	ls.history_idx += 1
+	// previous history item
+	if ls.history_idx >= len(l.history) {
+		ls.history_idx = len(l.history) - 1
+	}
+	return l.HistoryGet(ls.history_idx)
+}
+
+// Add a new entry to the history
+func (l *linenoise) HistoryAdd(line string) {
+	if l.history_maxlen == 0 {
+		return
+	}
+	// don't add duplicate lines
+	for _, s := range l.history {
+		if s == line {
+			return
+		}
+	}
+	// add the line to the history
+	if len(l.history) == l.history_maxlen {
+		// remove the first entry
+		l.history = l.history[1:]
+	}
+	l.history = append(l.history, line)
+}
+
+// Set the maximum length for the history.
+// Truncate the current history if needed.
+func (l *linenoise) HistorySetMaxlen(n int) {
+	if n < 0 {
+		return
+	}
+	l.history_maxlen = n
+	current_length := len(l.history)
+	if current_length > l.history_maxlen {
+		// truncate and retain the latest history
+		l.history = l.history[current_length-l.history_maxlen:]
+	}
+}
+
+// Save the history to a file.
+func (l *linenoise) HistorySave(fname string) {
+	if len(l.history) == 0 {
+		return
+	}
+	f, err := os.Create(fname)
+	if err != nil {
+		log.Printf("error opening %s\n", fname)
+		return
+	}
+	_, err = f.WriteString(strings.Join(l.history, "\n"))
+	if err != nil {
+		log.Printf("%s error writing %s\n", fname, err)
+	}
+	f.Close()
+}
+
+// Load history from a file
+func (l *linenoise) HistoryLoad(fname string) {
+	info, err := os.Stat(fname)
+	if err != nil {
+		return
+	}
+	if !info.Mode().IsRegular() {
+		log.Printf("%s is not a regular file\n", fname)
+		return
+	}
+	l.history = make([]string, 0, l.history_maxlen)
+	f, err := os.Open(fname)
+	if err != nil {
+		log.Printf("%s error on open %s\n", fname, err)
+		return
+	}
+	b := bufio.NewReader(f)
+	for {
+		s, err := b.ReadString('\n')
+		if err == nil || err == io.EOF {
+			s = strings.TrimSpace(s)
+			if len(s) != 0 {
+				l.history = append(l.history, s)
+			}
+			if err == io.EOF {
+				break
+			}
+		} else {
+			log.Printf("%s error on read %s\n", fname, err)
+		}
+	}
+	f.Close()
 }
 
 //-----------------------------------------------------------------------------
