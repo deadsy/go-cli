@@ -13,21 +13,19 @@ Based on: http://github.com/antirez/linenoise
 package ln
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"os"
 	"syscall"
-	"time"
 	"unicode"
 
 	"github.com/creack/termios/raw"
 	"github.com/mattn/go-isatty"
+	"github.com/mistsys/mist_go_utils/fdset"
 )
 
 //-----------------------------------------------------------------------------
 
-// Keycodes
 const KEYCODE_NULL = 0
 const KEYCODE_CTRL_A = 1
 const KEYCODE_CTRL_B = 2
@@ -49,7 +47,15 @@ const KEYCODE_CTRL_W = 23
 const KEYCODE_ESC = 27
 const KEYCODE_BS = 127
 
+var STDIN = syscall.Stdin
+var STDOUT = syscall.Stdout
+var STDERR = syscall.Stderr
+
+var TIMEOUT_20ms = syscall.Timeval{0, 20 * 1000}
+var TIMEOUT_10ms = syscall.Timeval{0, 10 * 1000}
+
 //-----------------------------------------------------------------------------
+// control the terminal mode
 
 // Set a tty terminal to raw mode.
 func set_rawmode(fd int) (*raw.Termios, error) {
@@ -84,39 +90,78 @@ func restore_mode(fd int, mode *raw.Termios) error {
 }
 
 //-----------------------------------------------------------------------------
+// UTF8 Decoding
 
-func get_rune(ch chan rune) {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		r, size, err := reader.ReadRune()
-		if err != nil {
-			log.Printf("%s\n", err)
-			close(ch)
-			return
-		}
-		if size == 1 && r == unicode.ReplacementChar {
-			log.Printf("invalid unicode")
-		} else {
-			ch <- r
-		}
-	}
+const (
+	UTF8_BYTE0 = iota
+	UTF8_3MORE
+	UTF8_2MORE
+	UTF8_1MORE
+)
+
+type utf8 struct {
+	state byte
+	count int
+	val   int32
 }
 
-//-----------------------------------------------------------------------------
+// Add a byte to a utf8 decode.
+// Return the rune and it's size in bytes.
+func (u *utf8) add(c byte) (r rune, size int) {
+	switch u.state {
+	case UTF8_BYTE0:
+		if c&0x80 == 0 {
+			// 1 byte
+			return rune(c), 1
+		} else if c&0xe0 == 0xc0 {
+			// 2 byte
+			u.val = int32(c&0x1f) << 6
+			u.count = 2
+			u.state = UTF8_1MORE
+			return KEYCODE_NULL, 0
+		} else if c&0xf0 == 0xe0 {
+			// 3 bytes
+			u.val = int32(c&0x0f) << 6
+			u.count = 3
+			u.state = UTF8_2MORE
+			return KEYCODE_NULL, 0
+		} else if c&0xf8 == 0xf0 {
+			// 4 bytes
+			u.val = int32(c&0x07) << 6
+			u.count = 4
+			u.state = UTF8_3MORE
+			return KEYCODE_NULL, 0
+		}
+	case UTF8_3MORE:
+		if c&0xc0 == 0x80 {
+			u.state = UTF8_2MORE
+			u.val |= int32(c & 0x3f)
+			u.val <<= 6
+			return KEYCODE_NULL, 0
+		}
+	case UTF8_2MORE:
+		if c&0xc0 == 0x80 {
+			u.state = UTF8_1MORE
+			u.val |= int32(c & 0x3f)
+			u.val <<= 6
+			return KEYCODE_NULL, 0
+		}
+	case UTF8_1MORE:
+		if c&0xc0 == 0x80 {
+			u.state = UTF8_BYTE0
+			u.val |= int32(c & 0x3f)
+			return rune(u.val), u.count
+		}
+	}
+	// Error
+	u.state = UTF8_BYTE0
+	return unicode.ReplacementChar, 1
+}
 
-var STDIN = syscall.Stdin
-var STDOUT = syscall.Stdout
-var STDERR = syscall.Stderr
-
-/*
-
-var TIMEOUT_20ms = syscall.Timeval{0, 20 * 1000}
-var TIMEOUT_10ms = syscall.Timeval{0, 10 * 1000}
-
-// read a single rune from a file (with timeout)
+// read a single rune from a file descriptor (with timeout)
 // timeout >= 0 : wait for timeout seconds
 // timeout = nil : return immediately
-func get_rune(fd int, timeout *syscall.Timeval) rune {
+func (u *utf8) get_rune(fd int, timeout *syscall.Timeval) rune {
 	// use select() for the timeout
 	if timeout != nil {
 		rd := syscall.FdSet{}
@@ -126,21 +171,34 @@ func get_rune(fd int, timeout *syscall.Timeval) rune {
 			panic(fmt.Sprintf("select error %s\n", err))
 		}
 		if n == 0 {
-			return RUNE_NULL
+			// nothing is readable
+			return KEYCODE_NULL
 		}
 	}
-	c := make([]byte, 1)
-	n, err := syscall.Read(fd, c)
+
+	// Read the file descriptor
+	buf := make([]byte, 1)
+	_, err := syscall.Read(fd, buf)
 	if err != nil {
 		panic(fmt.Sprintf("read error %s\n", err))
 	}
-	if n == 0 {
-		return RUNE_NULL
+
+	// decode the utf8
+	r, size := u.add(buf[0])
+	if size == 0 {
+		// incomplete utf8 code point
+		return KEYCODE_NULL
 	}
-	return rune(c[0])
+	if size == 1 && r == unicode.ReplacementChar {
+		// utf8 decode error
+		return KEYCODE_NULL
+	}
+	return r
 }
 
+//-----------------------------------------------------------------------------
 
+/*
 
 // If fd is not readable within the timeout period return true.
 func would_block(fd int, timeout *syscall.Timeval) bool {
@@ -374,31 +432,37 @@ func (l *linenoise) edit(
 // Exit when the function returns true or when the exit key is pressed.
 // Returns true when the loop function completes, false for early exit.
 func (l *linenoise) Loop(fn func() bool, exit_key rune) bool {
+
+	// set rawmode for stdin
 	err := l.enable_rawmode(STDIN)
 	if err != nil {
 		log.Printf("enable rawmode error %s\n", err)
 		return false
 	}
-	defer l.disable_rawmode(STDIN)
-	defer os.Stdin.Close()
 
-	ch := make(chan rune)
-	go get_rune(ch)
-	for {
-		select {
-		case r, ok := <-ch:
-			if ok && r == exit_key {
-				// the loop has been cancelled
-				return false
-			}
-		default:
+	u := utf8{}
+	rc := false
+	looping := true
+
+	for looping {
+		// get a rune
+		r := u.get_rune(STDIN, &TIMEOUT_10ms)
+		if r == exit_key {
+			// the loop has been cancelled
+			rc = false
+			looping = false
+		} else {
 			if fn() {
 				// the loop function has completed
-				return true
+				rc = true
+				looping = false
 			}
 		}
 	}
-	return false
+
+	// restore the terminal mode for stdin
+	l.disable_rawmode(STDIN)
+	return rc
 }
 
 // Print scan codes on screen for debugging/development purposes
@@ -407,88 +471,59 @@ func (l *linenoise) PrintKeycodes() {
 	fmt.Printf("Linenoise key codes debugging mode.\n")
 	fmt.Printf("Press keys to see scan codes. Type 'quit' at any time to exit.\n")
 
+	// set rawmode for stdin
 	err := l.enable_rawmode(STDIN)
 	if err != nil {
 		log.Printf("enable rawmode error %s\n", err)
 		return
 	}
-	defer l.disable_rawmode(STDIN)
 
-	ch := make(chan rune)
-	go get_rune(ch)
-
+	u := utf8{}
 	var cmd [4]rune
 	running := true
 
 	for running {
-		select {
-		case r, ok := <-ch:
-			if ok {
-				// display the character
-				var s string
-				if unicode.IsPrint(r) {
-					s = string(r)
-				} else {
-					switch r {
-					case KEYCODE_CR:
-						s = "\\r"
-					case KEYCODE_TAB:
-						s = "\\t"
-					case KEYCODE_ESC:
-						s = "ESC"
-					case KEYCODE_LF:
-						s = "\\n"
-					case KEYCODE_BS:
-						s = "BS"
-					default:
-						s = "?"
-					}
-				}
-				fmt.Printf("'%s' 0x%x (%d)\r\n", s, int32(r), int32(r))
-
-				// check for quit
-				copy(cmd[:], cmd[1:])
-				cmd[3] = r
-				if string(cmd[:]) == "quit" {
-					running = false
-				}
-
-			} else {
-				log.Printf("get_rune() has closed the channel")
-				break
+		// get a rune
+		r := u.get_rune(STDIN, nil)
+		if r == KEYCODE_NULL {
+			continue
+		}
+		// display the character
+		var s string
+		if unicode.IsPrint(r) {
+			s = string(r)
+		} else {
+			switch r {
+			case KEYCODE_CR:
+				s = "\\r"
+			case KEYCODE_TAB:
+				s = "\\t"
+			case KEYCODE_ESC:
+				s = "ESC"
+			case KEYCODE_LF:
+				s = "\\n"
+			case KEYCODE_BS:
+				s = "BS"
+			default:
+				s = "?"
 			}
-
+		}
+		fmt.Printf("'%s' 0x%x (%d)\r\n", s, int32(r), int32(r))
+		// check for quit
+		copy(cmd[:], cmd[1:])
+		cmd[3] = r
+		if string(cmd[:]) == "quit" {
+			running = false
 		}
 	}
 
+	// restore the terminal mode for stdin
+	l.disable_rawmode(STDIN)
 }
 
 // Set multiline mode
 func (ln *linenoise) SetMultiline(mode bool) {
 	ln.mlmode = mode
-}
-
-//-----------------------------------------------------------------------------
-
-func foo1() {
-	os.Stdin.Close()
-}
-
-func (l *linenoise) Foo() {
-
-	err := l.enable_rawmode(STDIN)
-	if err != nil {
-		log.Printf("enable rawmode error %s\n", err)
-		return
-	}
-	defer foo1()
-	defer l.disable_rawmode(STDIN)
-
-	ch := make(chan rune)
-	go get_rune(ch)
-
-	time.Sleep(1 * time.Second)
-
 }
 
 //-----------------------------------------------------------------------------

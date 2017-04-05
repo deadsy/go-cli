@@ -29,17 +29,7 @@ func loop() bool {
 
 //-----------------------------------------------------------------------------
 
-func main2() {
-
-	l := ln.NewLineNoise()
-
-	l.Foo()
-
-}
-
-//-----------------------------------------------------------------------------
-
-func main1() {
+func main() {
 
 	multiline_flag := flag.Bool("multiline", false, "enable multiline editing mode")
 	keycode_flag := flag.Bool("keycodes", false, "read and display keycodes")
@@ -56,32 +46,16 @@ func main1() {
 		os.Exit(0)
 	} else if *loop_flag {
 		fmt.Printf("looping: press ctrl-d to exit\n")
-
 		rc := l.Loop(loop, ln.KEYCODE_CTRL_D)
 		if rc {
 			fmt.Printf("loop completed\n")
 		} else {
 			fmt.Printf("early exit of loop\n")
 		}
-
-		loop_idx = 0
-		rc = l.Loop(loop, ln.KEYCODE_CTRL_D)
-		if rc {
-			fmt.Printf("loop completed\n")
-		} else {
-			fmt.Printf("early exit of loop\n")
-		}
-
 		os.Exit(0)
 	}
 
 	os.Exit(0)
-}
-
-//-----------------------------------------------------------------------------
-
-func main() {
-	main2()
 }
 
 //-----------------------------------------------------------------------------
