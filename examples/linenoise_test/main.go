@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,21 +99,24 @@ func main() {
 	for {
 		line := l.Read("hello> ", "")
 		if line == nil {
+			// quit
 			break
 		}
 		s := *line
 		if strings.HasPrefix(s, "/") {
 			// commands
 			if strings.HasPrefix(s, "/historylen") {
-				/*
-					        l := strings.Split(line, " ")
-									if len(l) >= 2 {
-										n = int(l[1], 10)
-										l.HistorySetMaxlen(n)
-									} else {
-										fmt.Printf("no history length\n")
-									}
-				*/
+				args := strings.Fields(s)
+				if len(args) >= 2 {
+					n, err := strconv.Atoi(args[1])
+					if err == nil {
+						l.HistorySetMaxlen(n)
+					} else {
+						fmt.Printf("invalid history length\n")
+					}
+				} else {
+					fmt.Printf("no history length\n")
+				}
 			} else {
 				fmt.Printf("unrecognized command: %s\n", s)
 			}

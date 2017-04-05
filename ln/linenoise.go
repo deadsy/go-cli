@@ -460,25 +460,39 @@ func (l *linenoise) read_raw(prompt, s string) *string {
 	return line
 }
 
-// Read a line. Return "" on EOF.
+// Read a line. Return nil on EOF/quit.
 func (l *linenoise) Read(prompt, s string) *string {
 
-	/*
+	if !isatty.IsTerminal(uintptr(STDIN)) {
+		var s string
+		_, err := fmt.Scanln(&s)
+		if err != nil {
+			if err == io.EOF {
+				// exit on EOF
+				return nil
+			}
+			// TODO is there a better way?
+			if err.Error() == "unexpected newline" {
+				s = ""
+				return &s
+			}
+			// some other error ...
+			log.Printf("%s\n", err)
+			return nil
+		}
+		return &s
 
-	  if not os.isatty(_STDIN) {
-	      // Not a tty. Read from a file/pipe.
-	      s = sys.stdin.readline().strip('\n')
-	      return (s, None)[s == '']
-	  } else if unsupported_term() {
-	      // Not a terminal we know about, so basic line reading.
-	      try:
-	        s = raw_input(prompt)
-	      except EOFError:
-	        s = None
-	      return s
-	  }
+	} else if unsupported_term() {
+		// Not a terminal we know about, so basic line reading.
+		/*
+			      try:
+				        s = raw_input(prompt)
+				      except EOFError:
+				        s = None
+				      return s
+		*/
 
-	*/
+	}
 
 	return l.read_raw(prompt, s)
 }
