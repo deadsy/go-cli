@@ -382,6 +382,7 @@ type linenoise struct {
 	completion_callback func(string) []string // callback function for tab completion
 	hints_callback      func(string) *Hint    // callback function for hints
 	hotkey              rune                  // character for hotkey
+	scanner             *bufio.Scanner        // buffered IO scanner for file reading
 }
 
 func NewLineNoise() *linenoise {
@@ -462,39 +463,32 @@ func (l *linenoise) read_raw(prompt, s string) *string {
 
 // Read a line. Return nil on EOF/quit.
 func (l *linenoise) Read(prompt, s string) *string {
-
 	if !isatty.IsTerminal(uintptr(STDIN)) {
-		var s string
-		_, err := fmt.Scanln(&s)
+		// Not a tty, read from a file or pipe.
+		if l.scanner == nil {
+			l.scanner = bufio.NewScanner(os.Stdin)
+		}
+		// scan a line
+		if !l.scanner.Scan() {
+			// EOF - return nil
+			return nil
+		}
+		// check for unexpected errors
+		err := l.scanner.Err()
 		if err != nil {
-			if err == io.EOF {
-				// exit on EOF
-				return nil
-			}
-			// TODO is there a better way?
-			if err.Error() == "unexpected newline" {
-				s = ""
-				return &s
-			}
-			// some other error ...
 			log.Printf("%s\n", err)
 			return nil
 		}
+		// get the line string
+		s := l.scanner.Text()
 		return &s
-
 	} else if unsupported_term() {
 		// Not a terminal we know about, so basic line reading.
-		/*
-			      try:
-				        s = raw_input(prompt)
-				      except EOFError:
-				        s = None
-				      return s
-		*/
-
+		return nil
+	} else {
+		// A command line on stdin, our raison d'etre.
+		return l.read_raw(prompt, s)
 	}
-
-	return l.read_raw(prompt, s)
 }
 
 //-----------------------------------------------------------------------------
