@@ -25,6 +25,7 @@ import (
 
 	"github.com/creack/termios/raw"
 	"github.com/mattn/go-isatty"
+	"github.com/mattn/go-runewidth"
 	"github.com/mistsys/mist_go_utils/fdset"
 )
 
@@ -202,20 +203,17 @@ func (u *utf8) get_rune(fd int, timeout *syscall.Timeval) rune {
 
 //-----------------------------------------------------------------------------
 
-/*
-
 // If fd is not readable within the timeout period return true.
 func would_block(fd int, timeout *syscall.Timeval) bool {
 	rd := syscall.FdSet{}
 	fdset.Set(fd, &rd)
 	n, err := syscall.Select(fd+1, &rd, nil, nil, timeout)
 	if err != nil {
-		panic(fmt.Sprintf("select error %s\n", err))
+		log.Printf("select error %s\n", err)
+		return false
 	}
 	return n == 0
 }
-
-*/
 
 // Write a string to the file descriptor, return the number of bytes written.
 func puts(fd int, s string) int {
@@ -303,6 +301,20 @@ func get_columns(ifd, ofd int) int {
 
 //-----------------------------------------------------------------------------
 
+// Clear the screen.
+func clear_screen() {
+	//sys.stdout.write('\x1b[H\x1b[2J')
+	//sys.stdout.flush()
+}
+
+// Beep.
+func beep() {
+	//sys.stderr.write('\x07')
+	//sys.stderr.flush()
+}
+
+//-----------------------------------------------------------------------------
+
 var unsupported = map[string]bool{
 	"dumb":   true,
 	"cons25": true,
@@ -339,9 +351,50 @@ func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
 	return &ls
 }
 
+// show hints to the right of the cursor
+func (ls *linestate) refresh_show_hints() []string {
+	return []string{}
+}
+
 // single line refresh
 func (ls *linestate) refresh_singleline() {
-	panic("")
+
+	seq := make([]string, 0, 10)
+
+	plen := runewidth.StringWidth(ls.prompt)
+	//blen := runewidth.StringWidth(string(ls.buf))
+	//idx := 0
+	pos := ls.pos
+
+	/*
+
+		// scroll the characters to the left if we are at max columns
+		for (plen + pos) >= ls.cols {
+			idx += 1
+			blen -= 1
+			pos -= 1
+		}
+		for (plen + blen) > ls.cols {
+			blen -= 1
+		}
+
+	*/
+
+	// cursor to the left edge
+	seq = append(seq, "\r")
+	// write the prompt
+	seq = append(seq, ls.prompt)
+	// write the current buffer content
+	//seq.append(''.join([self.buf[i] for i in range(idx, idx + blen)]))
+	seq = append(seq, string(ls.buf))
+	// Show hints (if any)
+	seq = append(seq, ls.refresh_show_hints()...)
+	// Erase to right
+	seq = append(seq, "\x1b[0K")
+	// Move cursor to original position
+	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", plen+pos))
+	// write it out
+	puts(ls.ofd, strings.Join(seq, ""))
 }
 
 // multiline refresh
@@ -358,6 +411,23 @@ func (ls *linestate) refresh_line() {
 	}
 }
 
+// delete the character at the current cursor position
+func (ls *linestate) edit_delete() {
+	if len(ls.buf) > 0 && ls.pos < len(ls.buf) {
+		ls.buf = append(ls.buf[:ls.pos], ls.buf[ls.pos+1:]...)
+		ls.refresh_line()
+	}
+}
+
+// delete the character to the left of the current cursor position
+func (ls *linestate) edit_backspace() {
+	if ls.pos > 0 && len(ls.buf) > 0 {
+		ls.buf = append(ls.buf[:ls.pos-1], ls.buf[ls.pos:]...)
+		ls.pos -= 1
+		ls.refresh_line()
+	}
+}
+
 // insert a character at the current cursor position
 func (ls *linestate) edit_insert(r rune) {
 	ls.buf = append(ls.buf[:ls.pos], append([]rune{r}, ls.buf[ls.pos:]...)...)
@@ -365,16 +435,87 @@ func (ls *linestate) edit_insert(r rune) {
 	ls.refresh_line()
 }
 
-// set the line buffer to a string
-func (ls *linestate) edit_set(s string) {
-	if len(s) == 0 {
-		return
+// Swap current character with the previous character.
+func (ls *linestate) edit_swap() {
+	if ls.pos > 0 && ls.pos < len(ls.buf) {
+		tmp := ls.buf[ls.pos-1]
+		ls.buf[ls.pos-1] = ls.buf[ls.pos]
+		ls.buf[ls.pos] = tmp
+		if ls.pos != len(ls.buf)-1 {
+			ls.pos += 1
+		}
+		ls.refresh_line()
 	}
+}
+
+// Set the line buffer to a string.
+func (ls *linestate) edit_set(s string) {
 	ls.buf = []rune(s)
 	ls.pos = len(ls.buf)
 	ls.refresh_line()
 }
 
+// Move cursor on the left.
+func (ls *linestate) edit_move_left() {
+	if ls.pos > 0 {
+		ls.pos -= 1
+		ls.refresh_line()
+	}
+}
+
+// Move cursor to the right.
+func (ls *linestate) edit_move_right() {
+	if ls.pos != len(ls.buf) {
+		ls.pos += 1
+		ls.refresh_line()
+	}
+}
+
+// Move to the start of the line buffer.
+func (ls *linestate) edit_move_home() {
+	if ls.pos > 0 {
+		ls.pos = 0
+		ls.refresh_line()
+	}
+}
+
+// Move to the end of the line buffer.
+func (ls *linestate) edit_move_end() {
+	if ls.pos != len(ls.buf) {
+		ls.pos = len(ls.buf)
+		ls.refresh_line()
+	}
+}
+
+// Delete the line.
+func (ls *linestate) delete_line() {
+	ls.buf = nil // []rune{}
+	ls.pos = 0
+	ls.refresh_line()
+}
+
+// Delete from the current cursor postion to the end of the line.
+func (ls *linestate) delete_to_end() {
+	ls.buf = ls.buf[:ls.pos]
+	ls.refresh_line()
+}
+
+// Delete the previous space delimited word.
+func (ls *linestate) delete_prev_word() {
+	old_pos := ls.pos
+	// remove spaces
+	for ls.pos > 0 && ls.buf[ls.pos-1] == ' ' {
+		ls.pos -= 1
+	}
+	// remove word
+	for ls.pos > 0 && ls.buf[ls.pos-1] != ' ' {
+		ls.pos -= 1
+	}
+	ls.buf = append(ls.buf[:ls.pos], ls.buf[old_pos:]...)
+	ls.refresh_line()
+}
+
+// Return a string for the current line buffer.
 func (ls *linestate) String() string {
 	return string(ls.buf)
 }
@@ -446,8 +587,9 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 		r := u.get_rune(STDIN, nil)
 
 		if r == KEYCODE_CR || r == l.hotkey {
+			l.history_pop(-1)
+
 			/*
-			   self.history.pop()
 			   if self.hints_callback:
 			     # Refresh the line without hints to leave the
 			     # line as the user typed it after the newline.
@@ -455,60 +597,69 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			     self.hints_callback = None
 			     ls.refresh_line()
 			     self.hints_callback = hcb
-			   return str(ls) + ('', self.hotkey)[c == self.hotkey]
 			*/
+
+			s := ls.String()
+			if r == l.hotkey {
+				return s + string(l.hotkey), nil
+			} else {
+				return s, nil
+			}
+
 		} else if r == KEYCODE_BS {
 			// backspace: remove the character to the left of the cursor
-			//     ls.edit_backspace()
+			ls.edit_backspace()
 
 		} else if r == KEYCODE_ESC {
+			if would_block(ifd, &TIMEOUT_20ms) {
+				// looks like a single escape- abandon the line
+				l.history_pop(-1)
+				return "", nil
+			}
 
 			/*
-			   if would_block(ifd, _CHAR_TIMEOUT):
-			       # looks like a single escape- abandon the line
-			       self.history.pop()
-			       return ''
-			     # escape sequence
-			     s0 = _getc(ifd, _CHAR_TIMEOUT)
-			     s1 = _getc(ifd, _CHAR_TIMEOUT)
-			     if s0 == '[':
-			       # ESC [ sequence
-			       if s1 >= '0' and s1 <= '9':
-			         # Extended escape, read additional byte.
-			         s2 = _getc(ifd, _CHAR_TIMEOUT)
-			         if s2 == '~':
-			           if s1 == '3':
-			             # delete
-			             ls.edit_delete()
-			       else:
-			         if s1 == 'A':
-			           # cursor up
-			           ls.edit_set(self.history_prev(ls))
-			         elif s1 == 'B':
-			           # cursor down
-			           ls.edit_set(self.history_next(ls))
-			         elif s1 == 'C':
-			           # cursor right
-			           ls.edit_move_right()
-			         elif s1 == 'D':
-			           # cursor left
-			           ls.edit_move_left()
-			         elif s1 == 'H':
-			           # cursor home
-			           ls.edit_move_home()
-			         elif s1 == 'F':
-			           # cursor end
-			           ls.edit_move_end()
-			     elif s0 == '0':
-			       # ESC 0 sequence
-			       if s1 == 'H':
+
+			   # escape sequence
+			   s0 = _getc(ifd, _CHAR_TIMEOUT)
+			   s1 = _getc(ifd, _CHAR_TIMEOUT)
+			   if s0 == '[':
+			     # ESC [ sequence
+			     if s1 >= '0' and s1 <= '9':
+			       # Extended escape, read additional byte.
+			       s2 = _getc(ifd, _CHAR_TIMEOUT)
+			       if s2 == '~':
+			         if s1 == '3':
+			           # delete
+			           ls.edit_delete()
+			     else:
+			       if s1 == 'A':
+			         # cursor up
+			         ls.edit_set(self.history_prev(ls))
+			       elif s1 == 'B':
+			         # cursor down
+			         ls.edit_set(self.history_next(ls))
+			       elif s1 == 'C':
+			         # cursor right
+			         ls.edit_move_right()
+			       elif s1 == 'D':
+			         # cursor left
+			         ls.edit_move_left()
+			       elif s1 == 'H':
 			         # cursor home
 			         ls.edit_move_home()
 			       elif s1 == 'F':
 			         # cursor end
 			         ls.edit_move_end()
-			     else:
-			       pass
+			   elif s0 == '0':
+			     # ESC 0 sequence
+			     if s1 == 'H':
+			       # cursor home
+			       ls.edit_move_home()
+			     elif s1 == 'F':
+			       # cursor end
+			       ls.edit_move_end()
+			   else:
+			     pass
 
 			*/
 		} else if r == KEYCODE_CTRL_A {
@@ -518,47 +669,48 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			// cursor left
 			//ls.edit_move_left()
 		} else if r == KEYCODE_CTRL_C {
-			// return None == EOF
-			//return None
+			// return QUIT
+			return "", QUIT
 		} else if r == KEYCODE_CTRL_D {
-			// delete: remove the character to the right of the cursor.
-			// If the line is empty act as an EOF.
-			//if len(ls.buf):
-			//  ls.edit_delete()
-			//else:
-			//  self.history.pop()
-			//  return None
+			if len(ls.buf) > 0 {
+				// delete: remove the character to the right of the cursor.
+				ls.edit_delete()
+			} else {
+				// nothing to delete - QUIT
+				l.history_pop(-1)
+				return "", QUIT
+			}
 		} else if r == KEYCODE_CTRL_E {
 			// go to the end of the line
-			//ls.edit_move_end()
+			ls.edit_move_end()
 		} else if r == KEYCODE_CTRL_F {
 			// cursor right
-			//ls.edit_move_right()
+			ls.edit_move_right()
 		} else if r == KEYCODE_CTRL_H {
 			// backspace: remove the character to the left of the cursor
-			//ls.edit_backspace()
+			ls.edit_backspace()
 		} else if r == KEYCODE_CTRL_K {
 			// delete to the end of the line
-			//ls.delete_to_end()
+			ls.delete_to_end()
 		} else if r == KEYCODE_CTRL_L {
 			// clear screen
-			//clear_screen()
-			//ls.refresh_line()
+			clear_screen()
+			ls.refresh_line()
 		} else if r == KEYCODE_CTRL_N {
 			// next history item
-			//ls.edit_set(self.history_next(ls))
+			ls.edit_set(l.history_next(ls))
 		} else if r == KEYCODE_CTRL_P {
 			// previous history item
-			//ls.edit_set(self.history_prev(ls))
+			ls.edit_set(l.history_prev(ls))
 		} else if r == KEYCODE_CTRL_T {
 			// swap current character with the previous
-			//ls.edit_swap()
+			ls.edit_swap()
 		} else if r == KEYCODE_CTRL_U {
 			// delete the whole line
-			//ls.delete_line()
+			ls.delete_line()
 		} else if r == KEYCODE_CTRL_W {
 			// delete previous word
-			//ls.delete_prev_word()
+			ls.delete_prev_word()
 		} else {
 			// insert the character into the line buffer
 			ls.edit_insert(r)
@@ -574,22 +726,12 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 // Read a line from stdin in raw mode.
 func (l *linenoise) read_raw(prompt, init string) (string, error) {
 	// set rawmode for stdin
-	err := l.enable_rawmode(STDIN)
-	if err != nil {
-		return "", err
-	}
+	l.enable_rawmode(STDIN)
+	defer l.disable_rawmode(STDIN)
 	// edit the line
 	s, err := l.edit(STDIN, STDOUT, prompt, init)
-	if err != nil {
-		return "", err
-	}
-	// restore the terminal mode for stdin
-	err = l.disable_rawmode(STDIN)
-	if err != nil {
-		return "", err
-	}
 	fmt.Printf("\r\n")
-	return s, nil
+	return s, err
 }
 
 // Read a line using basic buffered IO.
@@ -760,49 +902,64 @@ func (l *linenoise) SetHotkey(key rune) {
 //-----------------------------------------------------------------------------
 // Command History
 
+// pop an entry from the history list
+func (l *linenoise) history_pop(idx int) string {
+	if idx < 0 {
+		// pop the last entry
+		idx = len(l.history) - 1
+	}
+	if idx >= 0 && idx < len(l.history) {
+		s := l.history[idx]
+		l.history = append(l.history[:idx], l.history[idx+1:]...)
+		return s
+	}
+	// nothing to pop
+	return ""
+}
+
 // Set a history entry by index number.
-func (l *linenoise) HistorySet(idx int, line string) {
+func (l *linenoise) history_set(idx int, line string) {
 	l.history[len(l.history)-1-idx] = line
 }
 
 // Get a history entry by index number.
-func (l *linenoise) HistoryGet(idx int) string {
+func (l *linenoise) history_get(idx int) string {
 	return l.history[len(l.history)-1-idx]
 }
 
 // Return the full history list.
-func (l *linenoise) HistoryList() []string {
+func (l *linenoise) history_list() []string {
 	return l.history
 }
 
 // Return next history item.
-func (l *linenoise) HistoryNext(ls *linestate) string {
+func (l *linenoise) history_next(ls *linestate) string {
 	if len(l.history) == 0 {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.HistorySet(ls.history_idx, ls.String())
+	l.history_set(ls.history_idx, ls.String())
 	ls.history_idx -= 1
 	// next history item
 	if ls.history_idx < 0 {
 		ls.history_idx = 0
 	}
-	return l.HistoryGet(ls.history_idx)
+	return l.history_get(ls.history_idx)
 }
 
 // Return previous history item.
-func (l *linenoise) HistoryPrev(ls *linestate) string {
+func (l *linenoise) history_prev(ls *linestate) string {
 	if len(l.history) == 0 {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.HistorySet(ls.history_idx, ls.String())
+	l.history_set(ls.history_idx, ls.String())
 	ls.history_idx += 1
 	// previous history item
 	if ls.history_idx >= len(l.history) {
 		ls.history_idx = len(l.history) - 1
 	}
-	return l.HistoryGet(ls.history_idx)
+	return l.history_get(ls.history_idx)
 }
 
 // Add a new entry to the history
@@ -819,7 +976,7 @@ func (l *linenoise) HistoryAdd(line string) {
 	// add the line to the history
 	if len(l.history) == l.history_maxlen {
 		// remove the first entry
-		l.history = l.history[1:]
+		l.history_pop(0)
 	}
 	l.history = append(l.history, line)
 }
