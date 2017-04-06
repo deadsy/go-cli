@@ -19,6 +19,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"unicode"
@@ -231,39 +232,40 @@ const DEFAULT_COLS = 80
 
 // Get the horizontal cursor position
 func get_cursor_position(ifd, ofd int) int {
-
 	// query the cursor location
 	if puts(ofd, "\x1b[6n") != 4 {
 		return -1
 	}
+	// read the response: ESC [ rows ; cols R
+	// rows/cols are decimal number strings
+	buf := make([]rune, 0, 32)
+	u := utf8{}
 
-	/*
-
-
-	    # read the response: ESC [ rows ; cols R
-	  # rows/cols are decimal number strings
-	  buf = []
-	  while len(buf) < 32:
-	    c = _getc(ifd, _CHAR_TIMEOUT)
-	    if c == KEYCODE_NULL:
-	      break
-	    buf.append(c)
-	    if buf[-1] == 'R':
-	      break
-	  # parse it: esc [ number ; number R (at least 6 characters)
-	  if len(buf) < 6 or buf[0] != KEYCODE_ESC or buf[1] != '[' or buf[-1] != 'R':
-	    return -1
-	  # should have 2 number fields
-	  x = ''.join(buf[2:-1]).split(';')
-	  if len(x) != 2:
-	    return -1
-	  (_, cols) = x
-	  # return the cols
-	  return int(cols, 10)
-
-	*/
-
-	return 0
+	for len(buf) < 32 {
+		r := u.get_rune(ifd, &TIMEOUT_20ms)
+		if r == KEYCODE_NULL {
+			break
+		}
+		buf = append(buf, r)
+		if r == 'R' {
+			break
+		}
+	}
+	// parse it: esc [ number ; number R (at least 6 characters)
+	if len(buf) < 6 || buf[0] != KEYCODE_ESC || buf[1] != '[' || buf[len(buf)-1] != 'R' {
+		return -1
+	}
+	// should have 2 number fields
+	x := strings.Split(string(buf[2:len(buf)-1]), ";")
+	if len(x) != 2 {
+		return -1
+	}
+	// return the cols
+	cols, err := strconv.Atoi(x[1])
+	if err != nil {
+		return -1
+	}
+	return cols
 }
 
 // Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails.
@@ -278,24 +280,28 @@ func get_columns(ifd, ofd int) int {
 	    (_, cols, _, _) = struct.unpack('HHHH', t)
 	  except:
 	    pass
-	  if cols == 0:
-	    # the ioctl failed - try using the terminal itself
-	    start = get_cursor_position(ifd, ofd)
-	    if start < 0:
-	      return _DEFAULT_COLS
-	    # Go to right margin and get position
-	    if _puts(ofd, '\x1b[999C') != 6:
-	      return _DEFAULT_COLS
-	    cols = get_cursor_position(ifd, ofd)
-	    if cols < 0:
-	      return _DEFAULT_COLS
-	    # restore the position
-	    if cols > start:
-	      _puts(ofd, '\x1b[%dD' % (cols - start))
-
 
 	*/
 
+	if cols == 0 {
+		// the ioctl failed - try using the terminal itself
+		start := get_cursor_position(ifd, ofd)
+		if start < 0 {
+			return DEFAULT_COLS
+		}
+		// Go to right margin and get position
+		if puts(ofd, "\x1b[999C") != 6 {
+			return DEFAULT_COLS
+		}
+		cols = get_cursor_position(ifd, ofd)
+		if cols < 0 {
+			return DEFAULT_COLS
+		}
+		// restore the position
+		if cols > start {
+			puts(ofd, fmt.Sprintf("\x1b[%dD", cols-start))
+		}
+	}
 	return cols
 }
 
@@ -303,14 +309,12 @@ func get_columns(ifd, ofd int) int {
 
 // Clear the screen.
 func clear_screen() {
-	//sys.stdout.write('\x1b[H\x1b[2J')
-	//sys.stdout.flush()
+	puts(STDOUT, "\x1b[H\x1b[2J")
 }
 
 // Beep.
 func beep() {
-	//sys.stderr.write('\x07')
-	//sys.stderr.flush()
+	puts(STDERR, "\x07")
 }
 
 //-----------------------------------------------------------------------------
@@ -616,52 +620,51 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 				l.history_pop(-1)
 				return "", nil
 			}
-
-			/*
-
-			   # escape sequence
-			   s0 = _getc(ifd, _CHAR_TIMEOUT)
-			   s1 = _getc(ifd, _CHAR_TIMEOUT)
-			   if s0 == '[':
-			     # ESC [ sequence
-			     if s1 >= '0' and s1 <= '9':
-			       # Extended escape, read additional byte.
-			       s2 = _getc(ifd, _CHAR_TIMEOUT)
-			       if s2 == '~':
-			         if s1 == '3':
-			           # delete
-			           ls.edit_delete()
-			     else:
-			       if s1 == 'A':
-			         # cursor up
-			         ls.edit_set(self.history_prev(ls))
-			       elif s1 == 'B':
-			         # cursor down
-			         ls.edit_set(self.history_next(ls))
-			       elif s1 == 'C':
-			         # cursor right
-			         ls.edit_move_right()
-			       elif s1 == 'D':
-			         # cursor left
-			         ls.edit_move_left()
-			       elif s1 == 'H':
-			         # cursor home
-			         ls.edit_move_home()
-			       elif s1 == 'F':
-			         # cursor end
-			         ls.edit_move_end()
-			   elif s0 == '0':
-			     # ESC 0 sequence
-			     if s1 == 'H':
-			       # cursor home
-			       ls.edit_move_home()
-			     elif s1 == 'F':
-			       # cursor end
-			       ls.edit_move_end()
-			   else:
-			     pass
-
-			*/
+			// escape sequence
+			s0 := u.get_rune(ifd, &TIMEOUT_20ms)
+			s1 := u.get_rune(ifd, &TIMEOUT_20ms)
+			if s0 == '[' {
+				// ESC [ sequence
+				if s1 >= '0' && s1 <= '9' {
+					// Extended escape, read additional byte.
+					s2 := u.get_rune(ifd, &TIMEOUT_20ms)
+					if s2 == '~' {
+						if s1 == '3' {
+							// delete
+							ls.edit_delete()
+						}
+					}
+				} else {
+					if s1 == 'A' {
+						// cursor up
+						ls.edit_set(l.history_prev(ls))
+					} else if s1 == 'B' {
+						// cursor down
+						ls.edit_set(l.history_next(ls))
+					} else if s1 == 'C' {
+						// cursor right
+						ls.edit_move_right()
+					} else if s1 == 'D' {
+						// cursor left
+						ls.edit_move_left()
+					} else if s1 == 'H' {
+						// cursor home
+						ls.edit_move_home()
+					} else if s1 == 'F' {
+						// cursor end
+						ls.edit_move_end()
+					}
+				}
+			} else if s0 == '0' {
+				// ESC 0 sequence
+				if s1 == 'H' {
+					// cursor home
+					ls.edit_move_home()
+				} else if s1 == 'F' {
+					// cursor end
+					ls.edit_move_end()
+				}
+			}
 		} else if r == KEYCODE_CTRL_A {
 			// go to the start of the line
 			//ls.edit_move_home()
@@ -715,7 +718,6 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			// insert the character into the line buffer
 			ls.edit_insert(r)
 		}
-
 	}
 
 	return "", nil

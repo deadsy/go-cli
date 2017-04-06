@@ -20,6 +20,9 @@ import (
 
 const KEY_HOTKEY = '?'
 
+//const PROMPT = "Կրնմमैंकाँखा Hello> "
+const PROMPT = "Hello> "
+
 //-----------------------------------------------------------------------------
 
 // Return a list of line completions.
@@ -98,7 +101,7 @@ func main() {
 	// The call to Read() will block until the user types something
 	// and presses enter or a hotkey.
 	for {
-		s, err := l.Read("Կրնմमैंकाँखा Hello> ", "")
+		s, err := l.Read(PROMPT, "")
 		if err != nil {
 			if err == ln.QUIT {
 				break
