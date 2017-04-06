@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -97,12 +98,14 @@ func main() {
 	// The call to Read() will block until the user types something
 	// and presses enter or a hotkey.
 	for {
-		line := l.Read("hello> ", "")
-		if line == nil {
-			// quit
+		s, err := l.Read("Կրնմमैंकाँखा Hello> ", "")
+		if err != nil {
+			if err == ln.QUIT {
+				break
+			}
+			log.Printf("%s\n", err)
 			break
 		}
-		s := *line
 		if strings.HasPrefix(s, "/") {
 			// commands
 			if strings.HasPrefix(s, "/historylen") {
@@ -129,7 +132,6 @@ func main() {
 			l.HistorySave("history.txt")
 		}
 	}
-
 	os.Exit(0)
 }
 

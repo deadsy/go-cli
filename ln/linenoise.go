@@ -14,6 +14,7 @@ package ln
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -56,6 +57,8 @@ var STDERR = syscall.Stderr
 
 var TIMEOUT_20ms = syscall.Timeval{0, 20 * 1000}
 var TIMEOUT_10ms = syscall.Timeval{0, 10 * 1000}
+
+var QUIT = errors.New("quit")
 
 //-----------------------------------------------------------------------------
 // control the terminal mode
@@ -423,71 +426,76 @@ func (l *linenoise) atexit() {
 //-----------------------------------------------------------------------------
 
 // edit a line in raw mode
-func (l *linenoise) edit(
-	ifd int, // input file descriptor
-	ofd int, // output file descriptor
-	prompt string, // line prompt string
-	s string, // initial line string
-) *string {
+func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 	// create the line state
 	ls := NewLineState(ifd, ofd, prompt, l)
 	// set and output the initial line
-	ls.edit_set(s)
+	ls.edit_set(init)
 
 	// The latest history entry is always our current buffer
 	l.HistoryAdd(ls.String())
 
-	return nil
+	return "", nil
 }
 
 //-----------------------------------------------------------------------------
 
 // Read a line from stdin in raw mode.
-func (l *linenoise) read_raw(prompt, s string) *string {
-
+func (l *linenoise) read_raw(prompt, init string) (string, error) {
 	// set rawmode for stdin
 	err := l.enable_rawmode(STDIN)
 	if err != nil {
-		log.Printf("enable rawmode error %s\n", err)
-		return nil
+		return "", err
 	}
-
-	line := l.edit(STDIN, STDOUT, prompt, s)
-
-	l.disable_rawmode(STDIN)
-
+	// edit the line
+	s, err := l.edit(STDIN, STDOUT, prompt, init)
+	if err != nil {
+		return "", err
+	}
+	// restore the terminal mode for stdin
+	err = l.disable_rawmode(STDIN)
+	if err != nil {
+		return "", err
+	}
 	fmt.Printf("\r\n")
+	return s, nil
+}
 
-	return line
+// Read a line using basic buffered IO.
+func (l *linenoise) read_basic() (string, error) {
+	if l.scanner == nil {
+		l.scanner = bufio.NewScanner(os.Stdin)
+	}
+	// scan a line
+	if !l.scanner.Scan() {
+		// EOF - return quit
+		return "", QUIT
+	}
+	// check for unexpected errors
+	err := l.scanner.Err()
+	if err != nil {
+		return "", err
+	}
+	// get the line string
+	return l.scanner.Text(), nil
 }
 
 // Read a line. Return nil on EOF/quit.
-func (l *linenoise) Read(prompt, s string) *string {
+func (l *linenoise) Read(prompt, init string) (string, error) {
 	if !isatty.IsTerminal(uintptr(STDIN)) {
 		// Not a tty, read from a file or pipe.
-		if l.scanner == nil {
-			l.scanner = bufio.NewScanner(os.Stdin)
-		}
-		// scan a line
-		if !l.scanner.Scan() {
-			// EOF - return nil
-			return nil
-		}
-		// check for unexpected errors
-		err := l.scanner.Err()
-		if err != nil {
-			log.Printf("%s\n", err)
-			return nil
-		}
-		// get the line string
-		s := l.scanner.Text()
-		return &s
+		return l.read_basic()
 	} else if unsupported_term() {
 		// Not a terminal we know about, so basic line reading.
-		return nil
+		fmt.Printf(prompt)
+		s, err := l.read_basic()
+		if err == QUIT {
+			fmt.Printf("\n")
+		}
+		return s, err
 	} else {
 		// A command line on stdin, our raison d'etre.
-		return l.read_raw(prompt, s)
+		return l.read_raw(prompt, init)
 	}
 }
 
