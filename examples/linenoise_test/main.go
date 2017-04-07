@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/deadsy/go_linenoise/ln"
+	runewidth "github.com/mattn/go-runewidth"
 )
 
 //-----------------------------------------------------------------------------
@@ -59,6 +60,20 @@ func loop() bool {
 //-----------------------------------------------------------------------------
 
 func main() {
+
+	s0 := "खखखखखB"
+	s1 := "AAAAAB"
+	s2 := "한한한한한B"
+	s3 := "01234567890"
+	s4 := "⌨⌨⌨⌨⌨B"
+
+	fmt.Printf("%s %d\n", s0, runewidth.StringWidth(s0))
+	fmt.Printf("%s %d\n", s1, runewidth.StringWidth(s1))
+	fmt.Printf("%s %d\n", s2, runewidth.StringWidth(s2))
+	fmt.Printf("%s %d\n", s3, runewidth.StringWidth(s3))
+	fmt.Printf("%s %d\n", s4, runewidth.StringWidth(s4))
+
+	os.Exit(0)
 
 	multiline_flag := flag.Bool("multiline", false, "enable multiline editing mode")
 	keycode_flag := flag.Bool("keycodes", false, "read and display keycodes")

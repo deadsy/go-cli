@@ -357,7 +357,40 @@ func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
 
 // show hints to the right of the cursor
 func (ls *linestate) refresh_show_hints() []string {
-	return []string{}
+
+	if ls.ts.hints_callback == nil {
+		// no hints
+		return nil
+	}
+
+	/*
+
+	   if len(self.prompt) + len(self.buf) >= self.cols:
+	     # no space to display hints
+	     return []
+	   # get the hint
+	   result = self.ts.hints_callback(str(self))
+	   if result is None:
+	     # no hints
+	     return []
+	   (hint, color, bold) = result
+	   if hint is None or len(hint) == 0:
+	     # no hints
+	     return []
+	   # work out the hint length
+	   hlen = min(len(hint), self.cols - len(self.prompt) - len(self.buf))
+	   seq = []
+	   if bold and color < 0:
+	     color = 37
+	   if color >= 0 or bold:
+	     seq.append('\033[%d;%d;49m' % ((0,1)[bold], color))
+	   seq.append(hint[:hlen])
+	   if color >= 0 or bold:
+	     seq.append('\033[0m')
+	   return seq
+	*/
+
+	return nil
 }
 
 // single line refresh
@@ -720,7 +753,7 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 		}
 	}
 
-	return "", nil
+	//return "", nil
 }
 
 //-----------------------------------------------------------------------------
