@@ -7,6 +7,13 @@ See: https://github.com/deadsy/go_linenoise
 
 Based on: http://github.com/antirez/linenoise
 
+Notes on Unicode: This codes operates on UTF8 codepoints. It assumes each glyph
+occupies k columns, where k is a positive integer. It assumes the runewidth
+call will tell us the number of columns taken by a UTF8 string. These assumptions
+won't be true for all character sets. If you don't have a monospaced version of the
+character being rendered then these assumptions will fail and odd things will
+be seen.
+
 */
 //-----------------------------------------------------------------------------
 
@@ -23,6 +30,7 @@ import (
 	"strings"
 	"syscall"
 	"unicode"
+	"unsafe"
 
 	"github.com/creack/termios/raw"
 	"github.com/mattn/go-isatty"
@@ -270,37 +278,28 @@ func get_cursor_position(ifd, ofd int) int {
 
 // Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails.
 func get_columns(ifd, ofd int) int {
-	cols := 0
-
-	/*
-
-	  # try using the ioctl to get the number of cols
-	  try:
-	    t = fcntl.ioctl(_STDOUT, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0))
-	    (_, cols, _, _) = struct.unpack('HHHH', t)
-	  except:
-	    pass
-
-	*/
-
-	if cols == 0 {
-		// the ioctl failed - try using the terminal itself
-		start := get_cursor_position(ifd, ofd)
-		if start < 0 {
-			return DEFAULT_COLS
-		}
-		// Go to right margin and get position
-		if puts(ofd, "\x1b[999C") != 6 {
-			return DEFAULT_COLS
-		}
-		cols = get_cursor_position(ifd, ofd)
-		if cols < 0 {
-			return DEFAULT_COLS
-		}
-		// restore the position
-		if cols > start {
-			puts(ofd, fmt.Sprintf("\x1b[%dD", cols-start))
-		}
+	// try using the ioctl to get the number of cols
+	var winsize [4]uint16
+	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(STDOUT), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&winsize)))
+	if err == 0 {
+		return int(winsize[1])
+	}
+	// the ioctl failed - try using the terminal itself
+	start := get_cursor_position(ifd, ofd)
+	if start < 0 {
+		return DEFAULT_COLS
+	}
+	// Go to right margin and get position
+	if puts(ofd, "\x1b[999C") != 6 {
+		return DEFAULT_COLS
+	}
+	cols := get_cursor_position(ifd, ofd)
+	if cols < 0 {
+		return DEFAULT_COLS
+	}
+	// restore the position
+	if cols > start {
+		puts(ofd, fmt.Sprintf("\x1b[%dD", cols-start))
 	}
 	return cols
 }
