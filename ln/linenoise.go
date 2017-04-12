@@ -395,12 +395,19 @@ func (ls *linestate) refresh_show_hints() []string {
 // single line refresh
 func (ls *linestate) refresh_singleline() {
 
-	seq := make([]string, 0, 10)
+	// build a map of the rune widths for the buffer
+	b_width := make([]int, len(ls.buf))
+	for i := range b_width {
+		b_width[i] = runewidth.RuneWidth(ls.buf[i])
+	}
+	// prompt width
+	p_width := runewidth.StringWidth(ls.prompt)
+	// cursor position width
+	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
 
-	plen := runewidth.StringWidth(ls.prompt)
-	//blen := runewidth.StringWidth(string(ls.buf))
-	//idx := 0
-	pos := ls.pos
+	// indices within buffer to be rendered
+	b_start := 0
+	b_end := len(ls.buf)
 
 	/*
 
@@ -416,19 +423,20 @@ func (ls *linestate) refresh_singleline() {
 
 	*/
 
+	// build the output string
+	seq := make([]string, 0, 6)
 	// cursor to the left edge
 	seq = append(seq, "\r")
 	// write the prompt
 	seq = append(seq, ls.prompt)
 	// write the current buffer content
-	//seq.append(''.join([self.buf[i] for i in range(idx, idx + blen)]))
-	seq = append(seq, string(ls.buf))
+	seq = append(seq, string(ls.buf[b_start:b_start+b_end]))
 	// Show hints (if any)
 	seq = append(seq, ls.refresh_show_hints()...)
 	// Erase to right
 	seq = append(seq, "\x1b[0K")
 	// Move cursor to original position
-	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", plen+pos))
+	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", p_width+pos_width))
 	// write it out
 	puts(ls.ofd, strings.Join(seq, ""))
 }
