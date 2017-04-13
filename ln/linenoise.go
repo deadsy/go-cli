@@ -333,15 +333,16 @@ func unsupported_term() bool {
 //-----------------------------------------------------------------------------
 
 type linestate struct {
-	ifd, ofd    int        // stdin/stdout file descriptors
-	prompt      string     // prompt string
-	ts          *linenoise // terminal state
-	history_idx int        // history index we are currently editing, 0 is the LAST entry
-	buf         []rune     // line buffer
-	cols        int        // number of columns in terminal
-	pos         int        // current cursor position within line buffer
-	oldpos      int        // previous refresh cursor position (multiline)
-	maxrows     int        // maximum num of rows used so far (multiline)
+	ifd, ofd     int        // stdin/stdout file descriptors
+	prompt       string     // prompt string
+	prompt_width int        // prompt width in terminal columns
+	ts           *linenoise // terminal state
+	history_idx  int        // history index we are currently editing, 0 is the LAST entry
+	buf          []rune     // line buffer
+	cols         int        // number of columns in terminal
+	pos          int        // current cursor position within line buffer
+	oldpos       int        // previous refresh cursor position (multiline)
+	maxrows      int        // maximum num of rows used so far (multiline)
 }
 
 func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
@@ -349,6 +350,7 @@ func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
 	ls.ifd = ifd
 	ls.ofd = ofd
 	ls.prompt = prompt
+	ls.prompt_width = runewidth.StringWidth(prompt)
 	ls.ts = ts
 	ls.cols = get_columns(ifd, ofd)
 	return &ls
@@ -395,33 +397,23 @@ func (ls *linestate) refresh_show_hints() []string {
 // single line refresh
 func (ls *linestate) refresh_singleline() {
 
-	// build a map of the rune widths for the buffer
-	b_width := make([]int, len(ls.buf))
-	for i := range b_width {
-		b_width[i] = runewidth.RuneWidth(ls.buf[i])
-	}
-	// prompt width
-	p_width := runewidth.StringWidth(ls.prompt)
-	// cursor position width
-	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
-
 	// indices within buffer to be rendered
 	b_start := 0
 	b_end := len(ls.buf)
 
-	/*
+	// trim the left hand side to keep the cursor position on the screen
+	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
+	for ls.prompt_width+pos_width >= ls.cols {
+		b_start += 1
+		pos_width = runewidth.StringWidth(string(ls.buf[b_start:ls.pos]))
+	}
 
-		// scroll the characters to the left if we are at max columns
-		for (plen + pos) >= ls.cols {
-			idx += 1
-			blen -= 1
-			pos -= 1
-		}
-		for (plen + blen) > ls.cols {
-			blen -= 1
-		}
-
-	*/
+	// trim the right hand side - don't print beyond max columns
+	buf_width := runewidth.StringWidth(string(ls.buf[b_start:b_end]))
+	for ls.prompt_width+buf_width >= ls.cols {
+		b_end -= 1
+		buf_width = runewidth.StringWidth(string(ls.buf[b_start:b_end]))
+	}
 
 	// build the output string
 	seq := make([]string, 0, 6)
@@ -430,13 +422,13 @@ func (ls *linestate) refresh_singleline() {
 	// write the prompt
 	seq = append(seq, ls.prompt)
 	// write the current buffer content
-	seq = append(seq, string(ls.buf[b_start:b_start+b_end]))
+	seq = append(seq, string(ls.buf[b_start:b_end]))
 	// Show hints (if any)
 	seq = append(seq, ls.refresh_show_hints()...)
 	// Erase to right
 	seq = append(seq, "\x1b[0K")
 	// Move cursor to original position
-	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", p_width+pos_width))
+	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", ls.prompt_width+pos_width))
 	// write it out
 	puts(ls.ofd, strings.Join(seq, ""))
 }
@@ -559,6 +551,79 @@ func (ls *linestate) delete_prev_word() {
 	ls.refresh_line()
 }
 
+// Show completions for the current line.
+func (ls *linestate) complete_line() rune {
+	r := rune(KEYCODE_NULL)
+	// get a list of line completions
+	lc := ls.ts.completion_callback(ls.String())
+	if len(lc) == 0 {
+		// no line completions
+		beep()
+	} else {
+		// navigate and display the line completions
+		stop := false
+		idx := 0
+		for !stop {
+			if idx < len(lc) {
+				// show the completion
+				saved_buf := ls.buf
+				saved_pos := ls.pos
+				// show the completion
+				ls.buf = []rune(lc[idx])
+				ls.pos = len(ls.buf)
+				ls.refresh_line()
+				// restore the line buffer
+				ls.buf = saved_buf
+				ls.pos = saved_pos
+			} else {
+				// show the original buffer
+				ls.refresh_line()
+			}
+			// navigate through the completions
+			u := utf8{}
+			r = u.get_rune(ls.ifd, nil)
+			if r == KEYCODE_NULL {
+				// error on read
+				stop = true
+			} else if r == KEYCODE_TAB {
+				// loop through the completions
+				idx = (idx + 1) % (len(lc) + 1)
+				if idx == len(lc) {
+					beep()
+				}
+			} else if r == KEYCODE_ESC {
+				// could be an escape, could be an escape sequence
+				if would_block(ls.ifd, &TIMEOUT_20ms) {
+					// nothing more to read, looks like a single escape
+					// re-show the original buffer
+					if idx < len(lc) {
+						ls.refresh_line()
+					}
+					// don't pass the escape key back
+					r = KEYCODE_NULL
+				} else {
+					// probably an escape sequence
+					// update the buffer and return
+					if idx < len(lc) {
+						ls.buf = []rune(lc[idx])
+						ls.pos = len(ls.buf)
+					}
+				}
+				stop = true
+			} else {
+				// update the buffer and return
+				if idx < len(lc) {
+					ls.buf = []rune(lc[idx])
+					ls.pos = len(ls.buf)
+				}
+				stop = true
+			}
+		}
+	}
+	// return the last rune read
+	return r
+}
+
 // Return a string for the current line buffer.
 func (ls *linestate) String() string {
 	return string(ls.buf)
@@ -627,29 +692,30 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 	u := utf8{}
 
 	for {
-
 		r := u.get_rune(STDIN, nil)
-
-		if r == KEYCODE_CR || r == l.hotkey {
+		if r == KEYCODE_NULL {
+			continue
+		} else if r == KEYCODE_TAB && l.completion_callback != nil {
+			r = ls.complete_line()
+			if r == KEYCODE_NULL {
+				continue
+			}
+		} else if r == KEYCODE_CR || r == l.hotkey {
 			l.history_pop(-1)
-
-			/*
-			   if self.hints_callback:
-			     # Refresh the line without hints to leave the
-			     # line as the user typed it after the newline.
-			     hcb = self.hints_callback
-			     self.hints_callback = None
-			     ls.refresh_line()
-			     self.hints_callback = hcb
-			*/
-
+			if l.hints_callback != nil {
+				// Refresh the line without hints to leave the
+				// line as the user typed it after the newline.
+				hcb := l.hints_callback
+				l.hints_callback = nil
+				ls.refresh_line()
+				l.hints_callback = hcb
+			}
 			s := ls.String()
 			if r == l.hotkey {
 				return s + string(l.hotkey), nil
 			} else {
 				return s, nil
 			}
-
 		} else if r == KEYCODE_BS {
 			// backspace: remove the character to the left of the cursor
 			ls.edit_backspace()
