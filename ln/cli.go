@@ -60,7 +60,10 @@ type UI interface {
 // {name, leaf, help} - leaf command with specific argument help
 // Note: The general help for a leaf function is the documentation string for the leaf function.
 
-type Menu []interface{}
+type Menu struct {
+	name string
+	item []interface{}
+}
 
 //-----------------------------------------------------------------------------
 // common help for cli leaf functions
@@ -220,7 +223,7 @@ type CLI struct {
 	ui      UI
 	ln      *linenoise
 	poll    func()
-	root    Menu
+	root    []Menu
 	prompt  string
 	running bool
 }
@@ -231,7 +234,7 @@ func NewCLI() *CLI {
 }
 
 // set the menu root
-func (cli *CLI) SetRoot(root Menu) {
+func (cli *CLI) SetRoot(root []Menu) {
 	cli.root = root
 }
 
@@ -261,78 +264,90 @@ func (cli *CLI) display_error(msg string, cmds []string, idx int) {
 }
 
 // display function help
-func (cli *CLI) display_function_help(help_info []Help) {
-	s := make([][]string, len(help_info))
+func (cli *CLI) display_function_help(help []Help) {
+	s := make([][]string, len(help))
 	for i := range s {
-		p_str := help_info[i].parm
+		p_str := help[i].parm
 		var d_str string
 		if len(p_str) != 0 {
-			d_str = fmt.Sprintf(": %s", help_info[i].parm)
+			d_str = fmt.Sprintf(": %s", help[i].descr)
 		} else {
-			d_str = fmt.Sprintf("  %s", help_info[i].parm)
+			d_str = fmt.Sprintf("  %s", help[i].descr)
 		}
 		s[i] = []string{"   ", p_str, d_str}
 	}
 	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
 }
 
-/*
-
 // display help results for a command at a menu level
-func (cli *CLI) command_help(cmd, menu) {
-    s = []
-    for item in menu:
-      name = item[0]
-      if name.startswith(cmd):
-        if isinstance(item[1], tuple):
-          # submenu: the next string is the help
-          descr = item[2]
-        else:
-          # command: docstring is the help
-          descr = item[1].__doc__
-        s.append(['  ', name, ': %s' % descr])
-    self.ui.put('%s\n' % display_cols(s, [0, 16, 0]))
+func (cli *CLI) command_help(cmd string, menu []Menu) {
+	s := make([][]string, len(menu))
+	for i, v := range menu {
+		if strings.HasPrefix(v.name, cmd) {
+			var descr string
+			if _, ok := v.item[1].([]Menu); ok {
+				// submenu: the next string is the help
+				descr = v.item[2].(string)
+			} else {
+				// command: docstring is the help
+				descr = "TODO docstring"
+				//descr = item[1].__doc__
+			}
+			s[i] = []string{"  ", v.name, fmt.Sprintf(": %s", descr)}
+		}
+	}
+	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
 }
 
 // display help for a leaf function
-func (cli *CLI) function_help(item) {
-    if len(item) > 2:
-      help_info = item[2]
-    else:
-      help_info = cr_help
-    self.display_function_help(help_info)
+func (cli *CLI) function_help(menu Menu) {
+	var help []Help
+	if len(menu.item) == 2 {
+		help = menu.item[1].([]Help)
+	} else {
+		help = cr_help
+	}
+	cli.display_function_help(help)
 }
 
 // display general help
 func (cli *CLI) general_help() {
-    cli.display_function_help(general_help)
+	cli.display_function_help(general_help)
 }
 
 // display the command history
-func (cli *CLI) display_history(args [string]) string {
-    # get the history
-    h = self.ln.history_list()
-    n = len(h)
-    if len(args) == 1:
-      # retrieve a specific history entry
-      idx = int_arg(self.ui, args[0], (0, n - 1), 10)
-      if idx is None:
-        return
-      # Return the next line buffer.
-      # Note: linenoise wants to add the line buffer as the zero-th history entry.
-      # It can only do this if it's unique- and this isn't because it's a prior
-      # history entry. Make it unique by adding a trailing whitespace. The other
-      # entries have been stripped prior to being added to history.
-      return h[n - idx - 1] + ' '
-    else:
-      # display all history
-      if n:
-        s = ['%-3d: %s' % (n - i - 1, l) for (i, l) in enumerate(h)]
-        self.ui.put('%s\n' % '\n'.join(s))
-      else:
-        self.ui.put('no history\n')
-      return ''
+func (cli *CLI) display_history(args []string) string {
+	// get the history
+	h := cli.ln.history_list()
+	n := len(h)
+	if len(args) == 1 {
+		// retrieve a specific history entry
+		idx, err := IntArg(cli.ui, args[0], [2]int{0, n - 1}, 10)
+		if err != nil {
+			return ""
+		}
+		// Return the next line buffer.
+		// Note: linenoise wants to add the line buffer as the zero-th history entry.
+		// It can only do this if it's unique- and this isn't because it's a prior
+		// history entry. Make it unique by adding a trailing whitespace. The other
+		// entries have been stripped prior to being added to history.
+		return h[n-idx-1] + " "
+	} else {
+		// display all history
+		if n > 0 {
+			s := make([]string, n)
+			for i := range s {
+				s[i] = fmt.Sprintf("%-3d: %s", n-i-1, h[i])
+			}
+			cli.ui.Put(strings.Join(s, "\n") + "\n")
+		} else {
+			cli.ui.Put("no history\n")
+		}
+	}
+	return ""
 }
+
+/*
 
 // return a tuple of line completions for the command line
 func (cli *CLI) completion_callback(self, cmd_line):
