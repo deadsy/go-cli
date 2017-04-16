@@ -46,7 +46,7 @@ import (
 //-----------------------------------------------------------------------------
 
 type Help struct {
-	parm, descr string
+	Parm, Descr string
 }
 
 // Each leaf function is called with an object with this interface.
@@ -60,9 +60,11 @@ type UI interface {
 // {name, leaf, help} - leaf command with specific argument help
 // Note: The general help for a leaf function is the documentation string for the leaf function.
 type MenuItem struct {
-	name string
-	x    []interface{}
+	Name string
+	X    []interface{}
 }
+
+type Leaf func(ui UI, args []string)
 
 //-----------------------------------------------------------------------------
 // common help for cli leaf functions
@@ -79,7 +81,7 @@ var general_help = []Help{
 	{"* note", "commands can be incomplete - Eg. sh = sho = show"},
 }
 
-var history_help = []Help{
+var HistoryHelp = []Help{
 	{"<cr>", "display all history"},
 	{"<index>", "recall history entry <index>"},
 }
@@ -126,7 +128,7 @@ func DisplayCols(clist [][]string, csize []int) string {
 			panic("len(csize) != ncols")
 		}
 	}
-	// check the column sizes are consistent
+	// check the number of columns for each row is consistent
 	for i := range clist {
 		if len(clist[i]) != ncols {
 			panic("mismatched number of columns")
@@ -137,17 +139,18 @@ func DisplayCols(clist [][]string, csize []int) string {
 	// go through the strings and bump up csize widths if required
 	for _, l := range clist {
 		for i := 0; i < ncols; i++ {
-			if csize[i] <= len(l[i]) {
-				csize[i] = len(l[i]) + cmargin
+			width := runewidth.StringWidth(l[i])
+			if csize[i] <= width {
+				csize[i] = width + cmargin
 			}
 		}
 	}
 	// build the row format string
-	fs_col := make([]string, ncols)
+	fmt_col := make([]string, ncols)
 	for i, n := range csize {
-		fs_col[i] = fmt.Sprintf("%%-%ds", n)
+		fmt_col[i] = fmt.Sprintf("%%-%ds", n)
 	}
-	fs_row := strings.Join(fs_col, "")
+	fmt_row := strings.Join(fmt_col, "")
 	// generate the row strings
 	row := make([]string, nrows)
 	for i, l := range clist {
@@ -156,7 +159,7 @@ func DisplayCols(clist [][]string, csize []int) string {
 		for j, v := range l {
 			x[j] = v
 		}
-		row[i] = fmt.Sprintf(fs_row, x...)
+		row[i] = fmt.Sprintf(fmt_row, x...)
 	}
 	// return rows and columns
 	return strings.Join(row, "\n")
@@ -220,7 +223,7 @@ func completions(line, cmd string, names []string, minlen int) []string {
 func menu_names(menu []MenuItem) []string {
 	s := make([]string, len(menu))
 	for i := range menu {
-		s[i] = menu[i].name
+		s[i] = menu[i].Name
 	}
 	return s
 }
@@ -236,8 +239,15 @@ type CLI struct {
 	running bool
 }
 
-func NewCLI() *CLI {
+func NewCLI(ui UI, history string) *CLI {
 	cli := CLI{}
+	cli.ui = ui
+	cli.ln = NewLineNoise()
+	cli.ln.SetCompletionCallback(cli.completion_callback)
+	cli.ln.SetHotkey('?')
+	cli.ln.HistoryLoad(history)
+	cli.prompt = "> "
+	cli.running = true
 	return &cli
 }
 
@@ -254,6 +264,11 @@ func (cli *CLI) SetPrompt(prompt string) {
 // set the external polling function
 func (cli *CLI) set_poll(poll func()) {
 	cli.poll = poll
+}
+
+// passthrough to the linenoise Loop()
+func (cli *CLI) Loop(fn func() bool, exit_key rune) bool {
+	return cli.ln.Loop(fn, exit_key)
 }
 
 // display a parse error string
@@ -275,12 +290,12 @@ func (cli *CLI) display_error(msg string, cmds []string, idx int) {
 func (cli *CLI) display_function_help(help []Help) {
 	s := make([][]string, len(help))
 	for i := range s {
-		p_str := help[i].parm
+		p_str := help[i].Parm
 		var d_str string
 		if len(p_str) != 0 {
-			d_str = fmt.Sprintf(": %s", help[i].descr)
+			d_str = fmt.Sprintf(": %s", help[i].Descr)
 		} else {
-			d_str = fmt.Sprintf("  %s", help[i].descr)
+			d_str = fmt.Sprintf("  %s", help[i].Descr)
 		}
 		s[i] = []string{"   ", p_str, d_str}
 	}
@@ -291,12 +306,12 @@ func (cli *CLI) display_function_help(help []Help) {
 func (cli *CLI) command_help(cmd string, menu []MenuItem) {
 	s := make([][]string, len(menu))
 	for i, item := range menu {
-		name := item.name
+		name := item.Name
 		if strings.HasPrefix(name, cmd) {
 			var descr string
-			if _, ok := item.x[0].([]MenuItem); ok {
+			if _, ok := item.X[0].([]MenuItem); ok {
 				// submenu: the next string is the help
-				descr = item.x[1].(string)
+				descr = item.X[1].(string)
 			} else {
 				// command: docstring is the help
 				descr = "TODO docstring"
@@ -311,8 +326,8 @@ func (cli *CLI) command_help(cmd string, menu []MenuItem) {
 // display help for a leaf function
 func (cli *CLI) function_help(item MenuItem) {
 	var help []Help
-	if len(item.x) == 2 {
-		help = item.x[1].([]Help)
+	if len(item.X) == 2 {
+		help = item.X[1].([]Help)
 	} else {
 		help = cr_help
 	}
@@ -320,12 +335,12 @@ func (cli *CLI) function_help(item MenuItem) {
 }
 
 // display general help
-func (cli *CLI) general_help() {
+func (cli *CLI) GeneralHelp() {
 	cli.display_function_help(general_help)
 }
 
 // display the command history
-func (cli *CLI) display_history(args []string) string {
+func (cli *CLI) DisplayHistory(args []string) string {
 	// get the history
 	h := cli.ln.history_list()
 	n := len(h)
@@ -368,9 +383,9 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 		line = cmd_line[:index[1]]
 		// How many items does this token match at this level of the menu?
 		matches := make([]MenuItem, 0, len(menu))
-		for _, x := range menu {
-			if strings.HasPrefix(x.name, cmd) {
-				matches = append(matches, x)
+		for _, item := range menu {
+			if strings.HasPrefix(item.Name, cmd) {
+				matches = append(matches, item)
 			}
 		}
 		if len(matches) == 0 {
@@ -378,12 +393,12 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 			return nil
 		} else if len(matches) == 1 {
 			item := matches[0]
-			if len(cmd) < len(item.name) {
+			if len(cmd) < len(item.Name) {
 				// it's an unambiguous single match, but we still complete it
-				return completions(line, cmd, []string{item.name}, len(cmd_line))
+				return completions(line, cmd, []string{item.Name}, len(cmd_line))
 			} else {
 				// we have the whole command - is this a submenu or leaf?
-				if submenu, ok := item.x[0].([]MenuItem); ok {
+				if submenu, ok := item.X[0].([]MenuItem); ok {
 					// submenu: switch to the submenu and continue parsing
 					menu = submenu
 					continue
@@ -403,99 +418,119 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 	return completions(line, "", menu_names(menu), len(cmd_line))
 }
 
-/*
-
 // Parse and process the current command line.
 // Return a string for the new command line.
 // This is generally empty, but may be non-empty if the user needs to edit a pre-entered command.
 func (cli *CLI) parse_cmdline(line string) string {
-
-    # scan the command line into a list of tokens
-    cmd_list = [x for x in line.split(' ') if x != '']
-    # if there are no commands, print a new empty prompt
-    if len(cmd_list) == 0:
-      return ''
-    # trace each command through the menu tree
-    menu = self.root
-    for (idx, cmd) in enumerate(cmd_list):
-      # A trailing '?' means the user wants help for this command
-      if cmd[-1] == '?':
-        # strip off the '?'
-        cmd = cmd[:-1]
-        self.command_help(cmd, menu)
-        # strip off the '?' and recycle the command
-        return line[:-1]
-      # try to match the cmd with a unique menu item
-      matches = []
-      for item in menu:
-        if item[0] == cmd:
-          # accept an exact match
-          matches = [item]
-          break
-        if item[0].startswith(cmd):
-          matches.append(item)
-      if len(matches) == 0:
-        # no matches - unknown command
-        self.display_error('unknown command', cmd_list, idx)
-        # add it to history in case the user wants to edit this junk
-        self.ln.history_add(line.strip())
-        # go back to an empty prompt
-        return ''
-      if len(matches) == 1:
-        # one match - submenu/leaf
-        item = matches[0]
-        if isinstance(item[1], tuple):
-          # this is a submenu
-          # switch to the submenu and continue parsing
-          menu = item[1]
-          continue
-        else:
-          # this is a leaf function - get the arguments
-          args = cmd_list[idx:]
-          del args[0]
-          if len(args) != 0:
-            if args[-1][-1] == '?':
-              self.function_help(item)
-              # strip off the '?', repeat the command
-              return line[:-1]
-          # call the leaf function
-          rc = item[1](self.ui, args)
-          # post leaf function actions
-          if rc is not None:
-            # currently only history retrieval returns not None
-            # the return code is the next line buffer
-            return rc
-          else:
-            # add the command to history
-            self.ln.history_add(line.strip())
-            # return to an empty line
-            return ''
-      else:
-        # multiple matches - ambiguous command
-        self.display_error('ambiguous command', cmd_list, idx)
-        return ''
-    # reached the end of the command list with no errors and no leaf function.
-    self.ui.put('additional input needed\n')
-    return line
+	// scan the command line into a list of tokens
+	cmd_list := make([]string, 0, 8)
+	for _, s := range strings.Split(line, " ") {
+		if len(s) != 0 {
+			cmd_list = append(cmd_list, s)
+		}
+	}
+	// if there are no commands, print a new empty prompt
+	if len(cmd_list) == 0 {
+		return ""
+	}
+	// trace each command through the menu tree
+	menu := cli.root
+	for idx, cmd := range cmd_list {
+		// A trailing '?' means the user wants help for this command
+		if cmd[len(cmd)-1] == '?' {
+			// strip off the '?'
+			cmd = cmd[:len(cmd)-1]
+			cli.command_help(cmd, menu)
+			// strip off the '?' and recycle the command
+			return line[:len(line)-1]
+		}
+		// try to match the cmd with a unique menu item
+		matches := make([]MenuItem, 0, len(menu))
+		for _, item := range menu {
+			if item.Name == cmd {
+				// accept an exact match
+				matches = []MenuItem{item}
+				break
+			}
+			if strings.HasPrefix(item.Name, cmd) {
+				matches = append(matches, item)
+			}
+		}
+		if len(matches) == 0 {
+			// no matches - unknown command
+			cli.display_error("unknown command", cmd_list, idx)
+			// add it to history in case the user wants to edit this junk
+			cli.ln.HistoryAdd(strings.TrimSpace(line))
+			// go back to an empty prompt
+			return ""
+		}
+		if len(matches) == 1 {
+			// one match - submenu/leaf
+			item := matches[0]
+			if submenu, ok := item.X[0].([]MenuItem); ok {
+				// this is a submenu
+				// switch to the submenu and continue parsing
+				menu = submenu
+				continue
+			} else {
+				// this is a leaf function - get the arguments
+				args := cmd_list[idx:]
+				// ?? del args[0]
+				if len(args) != 0 {
+					last_arg := args[len(args)-1]
+					if last_arg[len(last_arg)-1] == '?' {
+						cli.function_help(item)
+						// strip off the '?', repeat the command
+						return line[:len(line)-1]
+					}
+				}
+				// call the leaf function
+				leaf := item.X[0].(Leaf)
+				leaf(cli.ui, args)
+				/*
+					// post leaf function actions
+					if rc != "" {
+						// currently only history retrieval returns not None
+						// the return code is the next line buffer
+						return rc
+					} else {
+						// add the command to history
+						cli.ln.history_add(line.strip())
+						// return to an empty line
+						return ""
+					}
+				*/
+				return ""
+			}
+		} else {
+			// multiple matches - ambiguous command
+			cli.display_error("ambiguous command", cmd_list, idx)
+			return ""
+		}
+	}
+	// reached the end of the command list with no errors and no leaf function.
+	cli.ui.Put("additional input needed\n")
+	return line
 }
 
 // get and process cli commands in a loop
-func (cli *CLI) run() {
-    line = ''
-    while self.running:
-      line = self.ln.read(self.prompt, line)
-      if line is not None:
-        line = self.parse_cmdline(line)
-      else:
-        # exit: ctrl-C/ctrl-D
-        self.running = False
-    self.ln.history_save('history.txt')
+func (cli *CLI) Run() {
+	line := ""
+	for cli.running {
+		var err error
+		line, err = cli.ln.Read(cli.prompt, line)
+		if err == nil {
+			line = cli.parse_cmdline(line)
+		} else {
+			// exit: ctrl-C/ctrl-D
+			cli.running = false
+		}
+	}
+	cli.ln.HistorySave("history.txt")
 }
 
-*/
-
 // exit the cli
-func (cli *CLI) exit() {
+func (cli *CLI) Exit() {
 	cli.running = false
 }
 
