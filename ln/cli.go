@@ -54,15 +54,14 @@ type UI interface {
 	Put(s string)
 }
 
-// Menu Tree
+// Menu Item
 // {name, submenu, description} - reference to submenu
 // {name, leaf} - leaf command with generic <cr> help
 // {name, leaf, help} - leaf command with specific argument help
 // Note: The general help for a leaf function is the documentation string for the leaf function.
-
-type Menu struct {
+type MenuItem struct {
 	name string
-	item []interface{}
+	x    []interface{}
 }
 
 //-----------------------------------------------------------------------------
@@ -199,7 +198,7 @@ func split_index(s string) [][2]int {
 
 //-----------------------------------------------------------------------------
 
-// return the list of line completions
+// Return the list of line completions.
 func completions(line, cmd string, names []string, minlen int) []string {
 	if cmd == "" && line != "" {
 		line += " "
@@ -217,13 +216,22 @@ func completions(line, cmd string, names []string, minlen int) []string {
 	return lines
 }
 
+// Return a list of menu names.
+func menu_names(menu []MenuItem) []string {
+	s := make([]string, len(menu))
+	for i := range menu {
+		s[i] = menu[i].name
+	}
+	return s
+}
+
 //-----------------------------------------------------------------------------
 
 type CLI struct {
 	ui      UI
 	ln      *linenoise
 	poll    func()
-	root    []Menu
+	root    []MenuItem
 	prompt  string
 	running bool
 }
@@ -234,7 +242,7 @@ func NewCLI() *CLI {
 }
 
 // set the menu root
-func (cli *CLI) SetRoot(root []Menu) {
+func (cli *CLI) SetRoot(root []MenuItem) {
 	cli.root = root
 }
 
@@ -280,30 +288,31 @@ func (cli *CLI) display_function_help(help []Help) {
 }
 
 // display help results for a command at a menu level
-func (cli *CLI) command_help(cmd string, menu []Menu) {
+func (cli *CLI) command_help(cmd string, menu []MenuItem) {
 	s := make([][]string, len(menu))
-	for i, v := range menu {
-		if strings.HasPrefix(v.name, cmd) {
+	for i, item := range menu {
+		name := item.name
+		if strings.HasPrefix(name, cmd) {
 			var descr string
-			if _, ok := v.item[1].([]Menu); ok {
+			if _, ok := item.x[0].([]MenuItem); ok {
 				// submenu: the next string is the help
-				descr = v.item[2].(string)
+				descr = item.x[1].(string)
 			} else {
 				// command: docstring is the help
 				descr = "TODO docstring"
 				//descr = item[1].__doc__
 			}
-			s[i] = []string{"  ", v.name, fmt.Sprintf(": %s", descr)}
+			s[i] = []string{"  ", name, fmt.Sprintf(": %s", descr)}
 		}
 	}
 	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
 }
 
 // display help for a leaf function
-func (cli *CLI) function_help(menu Menu) {
+func (cli *CLI) function_help(item MenuItem) {
 	var help []Help
-	if len(menu.item) == 2 {
-		help = menu.item[1].([]Help)
+	if len(item.x) == 2 {
+		help = item.x[1].([]Help)
 	} else {
 		help = cr_help
 	}
@@ -347,44 +356,54 @@ func (cli *CLI) display_history(args []string) string {
 	return ""
 }
 
-/*
-
 // return a tuple of line completions for the command line
-func (cli *CLI) completion_callback(self, cmd_line):
-    line = ''
-    # split the command line into a list of command indices
-    cmd_list = split_index(cmd_line)
-    # trace each command through the menu tree
-    menu = self.root
-    for (start, end) in cmd_list:
-      cmd = cmd_line[start:end]
-      line = cmd_line[:end]
-      # How many items does this token match at this level of the menu?
-      matches = [x for x in menu if x[0].startswith(cmd)]
-      if len(matches) == 0:
-        # no matches, no completions
-        return None
-      elif len(matches) == 1:
-        item = matches[0]
-        if len(cmd) < len(item[0]):
-          # it's an unambiguous single match, but we still complete it
-          return self.completions(line, len(cmd_line), cmd, [item[0],])
-        else:
-          # we have the whole command - is this a submenu or leaf?
-          if isinstance(item[1], tuple):
-            # submenu: switch to the submenu and continue parsing
-            menu = item[1]
-            continue
-          else:
-            # leaf function: no completions to offer
-            return None
-      else:
-        # Multiple matches at this level. Return the matches.
-        return self.completions(line, len(cmd_line), cmd, [x[0] for x in matches])
-    # We've made it here without returning a completion list.
-    # The prior set of tokens have all matched single submenu items.
-    # The completions are all of the items at the current menu level.
-    return self.completions(line, len(cmd_line), '', [x[0] for x in menu])
+func (cli *CLI) completion_callback(cmd_line string) []string {
+	line := ""
+	// split the command line into a list of command indices
+	cmd_indices := split_index(cmd_line)
+	// trace each command through the menu tree
+	menu := cli.root
+	for _, index := range cmd_indices {
+		cmd := cmd_line[index[0]:index[1]]
+		line = cmd_line[:index[1]]
+		// How many items does this token match at this level of the menu?
+		matches := make([]MenuItem, 0, len(menu))
+		for _, x := range menu {
+			if strings.HasPrefix(x.name, cmd) {
+				matches = append(matches, x)
+			}
+		}
+		if len(matches) == 0 {
+			// no matches, no completions
+			return nil
+		} else if len(matches) == 1 {
+			item := matches[0]
+			if len(cmd) < len(item.name) {
+				// it's an unambiguous single match, but we still complete it
+				return completions(line, cmd, []string{item.name}, len(cmd_line))
+			} else {
+				// we have the whole command - is this a submenu or leaf?
+				if submenu, ok := item.x[0].([]MenuItem); ok {
+					// submenu: switch to the submenu and continue parsing
+					menu = submenu
+					continue
+				} else {
+					// leaf function: no completions to offer
+					return nil
+				}
+			}
+		} else {
+			// Multiple matches at this level. Return the matches.
+			return completions(line, cmd, menu_names(menu), len(cmd_line))
+		}
+	}
+	// We've made it here without returning a completion list.
+	// The prior set of tokens have all matched single submenu items.
+	// The completions are all of the items at the current menu level.
+	return completions(line, "", menu_names(menu), len(cmd_line))
+}
+
+/*
 
 // Parse and process the current command line.
 // Return a string for the new command line.
