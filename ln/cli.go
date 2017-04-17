@@ -27,28 +27,30 @@ import (
 
 //-----------------------------------------------------------------------------
 
+// Help
 type Help struct {
-	Parm  string
-	Descr string
+	Parm  string // parameter
+	Descr string // description
 }
 
-// Each leaf function is called with an object with this interface.
+// UI: Each leaf function is called with an application provided UI object.
 type UI interface {
 	Put(s string)
 }
 
 // Menu Item: 3 forms
-// {name string, submenu Menu, description string} - reference to submenu
-// {name string, leaf func} - leaf command with generic <cr> help
-// {name string, leaf func, help []Help} - leaf command with specific argument help
+// {name string, submenu Menu, description string}: reference to submenu
+// {name string, leaf func}: leaf command with generic <cr> help
+// {name string, leaf func, help []Help}: leaf command with specific argument help
 type MenuItem []interface{}
 
 // Menu: a set of menu items
 type Menu []MenuItem
 
+// Leaf: leaf function within menu hierarchy.
 type Leaf struct {
-	Descr string
-	F     func(UI, []string)
+	Descr string             // description
+	F     func(UI, []string) // leaf function
 }
 
 //-----------------------------------------------------------------------------
@@ -163,7 +165,7 @@ func repeat(r rune, n int) string {
 
 //-----------------------------------------------------------------------------
 
-// split a string on whitespace and return the substring indices
+// Split a string on whitespace and return the substring indices.
 func split_index(s string) [][2]int {
 	// start and end with whitespace
 	ws := true
@@ -188,15 +190,16 @@ func split_index(s string) [][2]int {
 
 // Return the list of line completions.
 func completions(line, cmd string, names []string, minlen int) []string {
+	// if we are completing a complete word then add a space
 	if cmd == "" && line != "" {
 		line += " "
 	}
-	lines := make([]string, 0, len(names))
+	lines := make([]string, len(names))
 	for i := range lines {
 		lines[i] = fmt.Sprintf("%s%s", line, names[i][len(cmd):])
 		// Pad the lines to a minimum length.
 		// We don't want the cursor to move about unecessarily.
-		pad := minlen - len(lines[i])
+		pad := minlen - runewidth.StringWidth(lines[i])
 		if pad > 0 {
 			lines[i] += repeat(' ', pad)
 		}
@@ -218,7 +221,6 @@ func menu_names(menu Menu) []string {
 type CLI struct {
 	ui        UI
 	ln        *linenoise
-	poll      func()
 	root      Menu
 	next_line string
 	prompt    string
@@ -252,17 +254,12 @@ func (cli *CLI) SetLine(line string) {
 	cli.next_line = line
 }
 
-// set the external polling function
-func (cli *CLI) set_poll(poll func()) {
-	cli.poll = poll
-}
-
-// passthrough to the linenoise Loop()
+// Passthrough to the wait for hotkey Loop().
 func (cli *CLI) Loop(fn func() bool, exit_key rune) bool {
 	return cli.ln.Loop(fn, exit_key)
 }
 
-// display a parse error string
+// Display a parse error string.
 func (cli *CLI) display_error(msg string, cmds []string, idx int) {
 	marker := make([]string, len(cmds))
 	for i := range cmds {
@@ -327,12 +324,12 @@ func (cli *CLI) function_help(item MenuItem) {
 	cli.display_function_help(help)
 }
 
-// display general help
+// Display general help.
 func (cli *CLI) GeneralHelp() {
 	cli.display_function_help(general_help)
 }
 
-// display the command history
+// Display the command history.
 func (cli *CLI) DisplayHistory(args []string) string {
 	// get the history
 	h := cli.ln.history_list()
@@ -364,7 +361,7 @@ func (cli *CLI) DisplayHistory(args []string) string {
 	return ""
 }
 
-// return a tuple of line completions for the command line
+// Return a slice of line completion strings for the command line.
 func (cli *CLI) completion_callback(cmd_line string) []string {
 	line := ""
 	// split the command line into a list of command indices
@@ -413,7 +410,7 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 
 // Parse and process the current command line.
 // Return a string for the new command line.
-// This is generally empty, but may be non-empty if the user needs to edit a pre-entered command.
+// The return string is generally empty, but may be non-empty for command history.
 func (cli *CLI) parse_cmdline(line string) string {
 	// scan the command line into a list of tokens
 	cmd_list := make([]string, 0, 8)
@@ -501,7 +498,7 @@ func (cli *CLI) parse_cmdline(line string) string {
 	return line
 }
 
-// get and process cli commands in a loop
+// Get and process CLI commands in a loop.
 func (cli *CLI) Run() {
 	line := ""
 	for cli.running {
@@ -517,7 +514,7 @@ func (cli *CLI) Run() {
 	cli.ln.HistorySave("history.txt")
 }
 
-// exit the cli
+// Exit the CLI.
 func (cli *CLI) Exit() {
 	cli.running = false
 }
