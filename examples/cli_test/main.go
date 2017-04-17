@@ -15,19 +15,25 @@ import (
 //-----------------------------------------------------------------------------
 // cli related leaf functions
 
-// general help
-func cmd_help(ui ln.UI, args []string) {
-	cli.GeneralHelp()
+var cmd_help = ln.Leaf{
+	Descr: "general help",
+	F: func(ui ln.UI, args []string) {
+		cli.GeneralHelp()
+	},
 }
 
-// command history
-func cmd_history(ui ln.UI, args []string) {
-	cli.DisplayHistory(args)
+var cmd_history = ln.Leaf{
+	Descr: "command history",
+	F: func(ui ln.UI, args []string) {
+		cli.DisplayHistory(args)
+	},
 }
 
-// exit application
-func cmd_exit(ui ln.UI, args []string) {
-	cli.Exit()
+var cmd_exit = ln.Leaf{
+	Descr: "exit application",
+	F: func(ui ln.UI, args []string) {
+		cli.Exit()
+	},
 }
 
 //-----------------------------------------------------------------------------
@@ -45,47 +51,63 @@ func loop() bool {
 	return loop_idx > LOOPS
 }
 
-// a0 function description"""
-func a0_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("a0 function arguments %v\n", args))
-	ui.Put("Looping... Ctrl-D to exit\n")
-	loop_idx = 0
-	cli.Loop(loop, ln.KEYCODE_CTRL_D)
+var a0_func = ln.Leaf{
+	Descr: "a0 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("a0 function arguments %v\n", args))
+		ui.Put("Looping... Ctrl-D to exit\n")
+		loop_idx = 0
+		cli.Loop(loop, ln.KEYCODE_CTRL_D)
+	},
 }
 
-// a1 function description
-func a1_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("a1 function arguments %v\n", args))
+var a1_func = ln.Leaf{
+	Descr: "a1 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("a1 function arguments %v\n", args))
+	},
 }
 
-// a2 function description
-func a2_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("a2 function arguments %v\n", args))
+var a2_func = ln.Leaf{
+	Descr: "a2 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("a2 function arguments %v\n", args))
+	},
 }
 
-// b0 function description
-func b0_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("b0 function arguments %v\n", args))
+var b0_func = ln.Leaf{
+	Descr: "b0 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("b0 function arguments %v\n", args))
+	},
 }
 
-// b1 function description
-func b1_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("b1 function arguments %v\n", args))
+var b1_func = ln.Leaf{
+	Descr: "b1 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("b1 function arguments %v\n", args))
+	},
 }
 
-// c0 function description
-func c0_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("c0 function arguments %v\n", args))
+var c0_func = ln.Leaf{
+	Descr: "c0 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("c0 function arguments %v\n", args))
+	},
 }
 
-// c1 function description
-func c1_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("c1 function arguments %v\n", args))
+var c1_func = ln.Leaf{
+	Descr: "c1 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("c1 function arguments %v\n", args))
+	},
 }
 
-// c2 function description
-func c2_func(ui ln.UI, args []string) {
-	ui.Put(fmt.Sprintf("c2 function arguments %v\n", args))
+var c2_func = ln.Leaf{
+	Descr: "c2 function description",
+	F: func(ui ln.UI, args []string) {
+		ui.Put(fmt.Sprintf("c2 function arguments %v\n", args))
+	},
 }
 
 //-----------------------------------------------------------------------------

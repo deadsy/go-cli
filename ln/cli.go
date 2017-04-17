@@ -46,6 +46,11 @@ type MenuItem []interface{}
 // Menu: a set of menu items
 type Menu []MenuItem
 
+type Leaf struct {
+	Descr string
+	F     func(UI, []string)
+}
+
 //-----------------------------------------------------------------------------
 // common help for cli leaf functions
 
@@ -289,13 +294,15 @@ func (cli *CLI) command_help(cmd string, menu Menu) {
 		name := item[0].(string)
 		if strings.HasPrefix(name, cmd) {
 			var descr string
-			if _, ok := item[1].([]MenuItem); ok {
+			switch item[1].(type) {
+			case Menu:
 				// submenu: the next string is the help
 				descr = item[2].(string)
-			} else {
-				// command: docstring is the help
-				descr = "TODO docstring"
-				//descr = item[1].__doc__
+			case Leaf:
+				// command: use leaf function description
+				descr = item[1].(Leaf).Descr
+			default:
+				panic("unknown type")
 			}
 			s = append(s, []string{"  ", name, fmt.Sprintf(": %s", descr)})
 		}
@@ -465,7 +472,7 @@ func (cli *CLI) parse_cmdline(line string) string {
 					}
 				}
 				// call the leaf function
-				leaf := item[1].(func(UI, []string))
+				leaf := item[1].(Leaf).F
 				leaf(cli.ui, args)
 				/*
 					// post leaf function actions
