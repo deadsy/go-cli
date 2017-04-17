@@ -216,12 +216,13 @@ func menu_names(menu Menu) []string {
 //-----------------------------------------------------------------------------
 
 type CLI struct {
-	ui      UI
-	ln      *linenoise
-	poll    func()
-	root    []MenuItem
-	prompt  string
-	running bool
+	ui        UI
+	ln        *linenoise
+	poll      func()
+	root      Menu
+	next_line string
+	prompt    string
+	running   bool
 }
 
 func NewCLI(ui UI, history string) *CLI {
@@ -244,6 +245,11 @@ func (cli *CLI) SetRoot(root []MenuItem) {
 // set the command prompt
 func (cli *CLI) SetPrompt(prompt string) {
 	cli.prompt = prompt
+}
+
+// Set the next command line.
+func (cli *CLI) SetLine(line string) {
+	cli.next_line = line
 }
 
 // set the external polling function
@@ -454,15 +460,13 @@ func (cli *CLI) parse_cmdline(line string) string {
 		if len(matches) == 1 {
 			// one match - submenu/leaf
 			item := matches[0]
-			if submenu, ok := item[1].([]MenuItem); ok {
-				// this is a submenu
-				// switch to the submenu and continue parsing
+			if submenu, ok := item[1].(Menu); ok {
+				// submenu, switch to the submenu and continue parsing
 				menu = submenu
 				continue
 			} else {
-				// this is a leaf function - get the arguments
-				args := cmd_list[idx:]
-				// ?? del args[0]
+				// leaf function - get the arguments
+				args := cmd_list[idx+1:]
 				if len(args) != 0 {
 					last_arg := args[len(args)-1]
 					if last_arg[len(last_arg)-1] == '?' {
@@ -474,20 +478,17 @@ func (cli *CLI) parse_cmdline(line string) string {
 				// call the leaf function
 				leaf := item[1].(Leaf).F
 				leaf(cli.ui, args)
-				/*
-					// post leaf function actions
-					if rc != "" {
-						// currently only history retrieval returns not None
-						// the return code is the next line buffer
-						return rc
-					} else {
-						// add the command to history
-						cli.ln.history_add(line.strip())
-						// return to an empty line
-						return ""
-					}
-				*/
-				return ""
+				// post leaf function actions
+				if cli.next_line != "" {
+					s := cli.next_line
+					cli.next_line = ""
+					return s
+				} else {
+					// add the command to history
+					cli.ln.HistoryAdd(strings.TrimSpace(line))
+					// return to an empty line
+					return ""
+				}
 			}
 		} else {
 			// multiple matches - ambiguous command

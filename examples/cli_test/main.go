@@ -25,7 +25,8 @@ var cmd_help = ln.Leaf{
 var cmd_history = ln.Leaf{
 	Descr: "command history",
 	F: func(ui ln.UI, args []string) {
-		cli.DisplayHistory(args)
+		s := cli.DisplayHistory(args)
+		cli.SetLine(s)
 	},
 }
 
