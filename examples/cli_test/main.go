@@ -98,33 +98,33 @@ var argument_help = []ln.Help{
 }
 
 // 'a' submenu items
-var a_menu = []ln.MenuItem{
-	{"a0", []interface{}{a0_func, argument_help}},
-	{"a1", []interface{}{a1_func, argument_help}},
-	{"a2", []interface{}{a2_func}},
+var a_menu = ln.Menu{
+	{"a0", a0_func, argument_help},
+	{"a1", a1_func, argument_help},
+	{"a2", a2_func},
 }
 
 // 'b' submenu items
-var b_menu = []ln.MenuItem{
-	{"b0", []interface{}{b0_func, argument_help}},
-	{"b1", []interface{}{b1_func}},
+var b_menu = ln.Menu{
+	{"b0", b0_func, argument_help},
+	{"b1", b1_func},
 }
 
 // 'c' submenu items
-var c_menu = []ln.MenuItem{
-	{"c0", []interface{}{c0_func, argument_help}},
-	{"c1", []interface{}{c1_func, argument_help}},
-	{"c2", []interface{}{c2_func}},
+var c_menu = ln.Menu{
+	{"c0", c0_func, argument_help},
+	{"c1", c1_func, argument_help},
+	{"c2", c2_func},
 }
 
 // root menu
-var menu_root = []ln.MenuItem{
-	{"amenu", []interface{}{a_menu, "menu a functions"}},
-	{"bmenu", []interface{}{b_menu, "menu b functions"}},
-	{"cmenu", []interface{}{c_menu, "menu c functions"}},
-	{"exit", []interface{}{cmd_exit}},
-	{"help", []interface{}{cmd_help}},
-	{"history", []interface{}{cmd_history, ln.HistoryHelp}},
+var menu_root = ln.Menu{
+	{"amenu", a_menu, "menu a functions"},
+	{"bmenu", b_menu, "menu b functions"},
+	{"cmenu", c_menu, "menu c functions"},
+	{"exit", cmd_exit},
+	{"help", cmd_help},
+	{"history", cmd_history, ln.HistoryHelp},
 }
 
 //-----------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 //-----------------------------------------------------------------------------
 /*
+
 Command Line Interface
 
 Implements a CLI with:
@@ -10,25 +11,6 @@ Implements a CLI with:
 * context sensitive help
 * command editing
 
-Notes:
-
-Menu Tuple Format:
-  (name, submenu, description) - submenu
-  (name, leaf) - leaf command with generic <cr> help
-  (name, leaf, help) - leaf command with specific argument help
-
-Help Format:
-  (parm, descr)
-
-Leaf Functions:
-
-def leaf_function(ui, args):
- .....
-
-ui: the ui object passed by the application to cli()
-args: the argument list from the command line
-
-The general help for a leaf function is the docstring for that function.
 */
 //-----------------------------------------------------------------------------
 
@@ -46,7 +28,8 @@ import (
 //-----------------------------------------------------------------------------
 
 type Help struct {
-	Parm, Descr string
+	Parm  string
+	Descr string
 }
 
 // Each leaf function is called with an object with this interface.
@@ -54,17 +37,14 @@ type UI interface {
 	Put(s string)
 }
 
-// Menu Item
-// {name, submenu, description} - reference to submenu
-// {name, leaf} - leaf command with generic <cr> help
-// {name, leaf, help} - leaf command with specific argument help
-// Note: The general help for a leaf function is the documentation string for the leaf function.
-type MenuItem struct {
-	Name string
-	X    []interface{}
-}
+// Menu Item: 3 forms
+// {name string, submenu Menu, description string} - reference to submenu
+// {name string, leaf func} - leaf command with generic <cr> help
+// {name string, leaf func, help []Help} - leaf command with specific argument help
+type MenuItem []interface{}
 
-type Leaf func(ui UI, args []string)
+// Menu: a set of menu items
+type Menu []MenuItem
 
 //-----------------------------------------------------------------------------
 // common help for cli leaf functions
@@ -220,10 +200,10 @@ func completions(line, cmd string, names []string, minlen int) []string {
 }
 
 // Return a list of menu names.
-func menu_names(menu []MenuItem) []string {
+func menu_names(menu Menu) []string {
 	s := make([]string, len(menu))
 	for i := range menu {
-		s[i] = menu[i].Name
+		s[i] = menu[i][0].(string)
 	}
 	return s
 }
@@ -303,21 +283,21 @@ func (cli *CLI) display_function_help(help []Help) {
 }
 
 // display help results for a command at a menu level
-func (cli *CLI) command_help(cmd string, menu []MenuItem) {
-	s := make([][]string, len(menu))
-	for i, item := range menu {
-		name := item.Name
+func (cli *CLI) command_help(cmd string, menu Menu) {
+	s := make([][]string, 0, len(menu))
+	for _, item := range menu {
+		name := item[0].(string)
 		if strings.HasPrefix(name, cmd) {
 			var descr string
-			if _, ok := item.X[0].([]MenuItem); ok {
+			if _, ok := item[1].([]MenuItem); ok {
 				// submenu: the next string is the help
-				descr = item.X[1].(string)
+				descr = item[2].(string)
 			} else {
 				// command: docstring is the help
 				descr = "TODO docstring"
 				//descr = item[1].__doc__
 			}
-			s[i] = []string{"  ", name, fmt.Sprintf(": %s", descr)}
+			s = append(s, []string{"  ", name, fmt.Sprintf(": %s", descr)})
 		}
 	}
 	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
@@ -326,8 +306,8 @@ func (cli *CLI) command_help(cmd string, menu []MenuItem) {
 // display help for a leaf function
 func (cli *CLI) function_help(item MenuItem) {
 	var help []Help
-	if len(item.X) == 2 {
-		help = item.X[1].([]Help)
+	if len(item) == 3 {
+		help = item[2].([]Help)
 	} else {
 		help = cr_help
 	}
@@ -384,7 +364,7 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 		// How many items does this token match at this level of the menu?
 		matches := make([]MenuItem, 0, len(menu))
 		for _, item := range menu {
-			if strings.HasPrefix(item.Name, cmd) {
+			if strings.HasPrefix(item[0].(string), cmd) {
 				matches = append(matches, item)
 			}
 		}
@@ -393,12 +373,12 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 			return nil
 		} else if len(matches) == 1 {
 			item := matches[0]
-			if len(cmd) < len(item.Name) {
+			if len(cmd) < len(item[0].(string)) {
 				// it's an unambiguous single match, but we still complete it
-				return completions(line, cmd, []string{item.Name}, len(cmd_line))
+				return completions(line, cmd, []string{item[0].(string)}, len(cmd_line))
 			} else {
 				// we have the whole command - is this a submenu or leaf?
-				if submenu, ok := item.X[0].([]MenuItem); ok {
+				if submenu, ok := item[1].([]MenuItem); ok {
 					// submenu: switch to the submenu and continue parsing
 					menu = submenu
 					continue
@@ -447,12 +427,12 @@ func (cli *CLI) parse_cmdline(line string) string {
 		// try to match the cmd with a unique menu item
 		matches := make([]MenuItem, 0, len(menu))
 		for _, item := range menu {
-			if item.Name == cmd {
+			if item[0].(string) == cmd {
 				// accept an exact match
 				matches = []MenuItem{item}
 				break
 			}
-			if strings.HasPrefix(item.Name, cmd) {
+			if strings.HasPrefix(item[0].(string), cmd) {
 				matches = append(matches, item)
 			}
 		}
@@ -467,7 +447,7 @@ func (cli *CLI) parse_cmdline(line string) string {
 		if len(matches) == 1 {
 			// one match - submenu/leaf
 			item := matches[0]
-			if submenu, ok := item.X[0].([]MenuItem); ok {
+			if submenu, ok := item[1].([]MenuItem); ok {
 				// this is a submenu
 				// switch to the submenu and continue parsing
 				menu = submenu
@@ -485,7 +465,7 @@ func (cli *CLI) parse_cmdline(line string) string {
 					}
 				}
 				// call the leaf function
-				leaf := item.X[0].(Leaf)
+				leaf := item[1].(func(UI, []string))
 				leaf(cli.ui, args)
 				/*
 					// post leaf function actions
