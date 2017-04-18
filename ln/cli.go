@@ -96,17 +96,20 @@ func IntArg(ui UI, arg string, limits [2]int, base int) (int, error) {
 
 //-----------------------------------------------------------------------------
 
-// Return a string for a list of columns.
-// Each element in clist is [col0_str, col1_str, col2_str, ...]
-// csize is a list of column width minimums.
-func DisplayCols(clist [][]string, csize []int) string {
+// Return a string for a table of row by column strings
+// Each column string will be left justified and aligned.
+func TableString(
+	rows [][]string, // table rows [[col0, col1, col2...,colN]...]
+	csize []int, // minimum column widths
+	cmargin int, // column to column margin
+) string {
 	// how many rows?
-	nrows := len(clist)
+	nrows := len(rows)
 	if nrows == 0 {
 		return ""
 	}
 	// how many columns?
-	ncols := len(clist[0])
+	ncols := len(rows[0])
 	// make sure we have a well formed csize
 	if csize == nil {
 		csize = make([]int, ncols)
@@ -115,20 +118,18 @@ func DisplayCols(clist [][]string, csize []int) string {
 			panic("len(csize) != ncols")
 		}
 	}
-	// check the number of columns for each row is consistent
-	for i := range clist {
-		if len(clist[i]) != ncols {
-			panic("mismatched number of columns")
+	// check that the number of columns for each row is consistent
+	for i := range rows {
+		if len(rows[i]) != ncols {
+			panic(fmt.Sprintf("ncols row%d != ncols row0", i))
 		}
 	}
-	// additional column margin
-	cmargin := 1
 	// go through the strings and bump up csize widths if required
-	for _, l := range clist {
-		for i := 0; i < ncols; i++ {
-			width := runewidth.StringWidth(l[i])
-			if csize[i] <= width {
-				csize[i] = width + cmargin
+	for i := 0; i < nrows; i++ {
+		for j := 0; j < ncols; j++ {
+			width := runewidth.StringWidth(rows[i][j])
+			if (width + cmargin) >= csize[j] {
+				csize[j] = width + cmargin
 			}
 		}
 	}
@@ -140,7 +141,7 @@ func DisplayCols(clist [][]string, csize []int) string {
 	fmt_row := strings.Join(fmt_col, "")
 	// generate the row strings
 	row := make([]string, nrows)
-	for i, l := range clist {
+	for i, l := range rows {
 		// convert []string to []interface{}
 		x := make([]interface{}, len(l))
 		for j, v := range l {
@@ -287,7 +288,7 @@ func (cli *CLI) display_function_help(help []Help) {
 		}
 		s[i] = []string{"   ", p_str, d_str}
 	}
-	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
+	cli.ui.Put(TableString(s, []int{0, 16, 0}, 1) + "\n")
 }
 
 // display help results for a command at a menu level
@@ -310,7 +311,7 @@ func (cli *CLI) command_help(cmd string, menu Menu) {
 			s = append(s, []string{"  ", name, fmt.Sprintf(": %s", descr)})
 		}
 	}
-	cli.ui.Put(DisplayCols(s, []int{0, 16, 0}) + "\n")
+	cli.ui.Put(TableString(s, []int{0, 16, 0}, 1) + "\n")
 }
 
 // display help for a leaf function

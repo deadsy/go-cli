@@ -9,8 +9,8 @@ func Test_DisplayCols(t *testing.T) {
 		{"aaa", "bbbb", "ccccccc"},
 	}
 	csize := []int{8, 10, 15}
-	t.Logf("\n%s\n", DisplayCols(clist, csize))
-	t.Logf("\n%s\n", DisplayCols(clist, nil))
+	t.Logf("\n%s\n", TableString(clist, csize, 1))
+	t.Logf("\n%s\n", TableString(clist, nil, 1))
 }
 
 func index_compare(a, b [][2]int) bool {
