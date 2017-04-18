@@ -389,7 +389,7 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 				return completions(line, cmd, menu_names(matches), len(cmd_line))
 			} else {
 				// we have the whole command - is this a submenu or leaf?
-				if submenu, ok := item[1].([]MenuItem); ok {
+				if submenu, ok := item[1].(Menu); ok {
 					// submenu: switch to the submenu and continue parsing
 					menu = submenu
 					continue
