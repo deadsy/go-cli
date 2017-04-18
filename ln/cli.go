@@ -385,7 +385,7 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 			item := matches[0]
 			if len(cmd) < len(item[0].(string)) {
 				// it's an unambiguous single match, but we still complete it
-				return completions(line, cmd, []string{item[0].(string)}, len(cmd_line))
+				return completions(line, cmd, menu_names(matches), len(cmd_line))
 			} else {
 				// we have the whole command - is this a submenu or leaf?
 				if submenu, ok := item[1].([]MenuItem); ok {
@@ -399,7 +399,7 @@ func (cli *CLI) completion_callback(cmd_line string) []string {
 			}
 		} else {
 			// Multiple matches at this level. Return the matches.
-			return completions(line, cmd, menu_names(menu), len(cmd_line))
+			return completions(line, cmd, menu_names(matches), len(cmd_line))
 		}
 	}
 	// We've made it here without returning a completion list.

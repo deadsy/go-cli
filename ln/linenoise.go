@@ -553,71 +553,71 @@ func (ls *linestate) delete_prev_word() {
 
 // Show completions for the current line.
 func (ls *linestate) complete_line() rune {
-	r := rune(KEYCODE_NULL)
 	// get a list of line completions
 	lc := ls.ts.completion_callback(ls.String())
 	if len(lc) == 0 {
 		// no line completions
 		beep()
-	} else {
-		// navigate and display the line completions
-		stop := false
-		idx := 0
-		for !stop {
-			if idx < len(lc) {
-				// show the completion
-				saved_buf := ls.buf
-				saved_pos := ls.pos
-				// show the completion
-				ls.buf = []rune(lc[idx])
-				ls.pos = len(ls.buf)
-				ls.refresh_line()
-				// restore the line buffer
-				ls.buf = saved_buf
-				ls.pos = saved_pos
-			} else {
-				// show the original buffer
-				ls.refresh_line()
+		return KEYCODE_NULL
+	}
+	// navigate and display the line completions
+	stop := false
+	idx := 0
+	u := utf8{}
+	var r rune
+	for !stop {
+		if idx < len(lc) {
+			// save the line buffer
+			saved_buf := ls.buf
+			saved_pos := ls.pos
+			// show the completion
+			ls.buf = []rune(lc[idx])
+			ls.pos = len(ls.buf)
+			ls.refresh_line()
+			// restore the line buffer
+			ls.buf = saved_buf
+			ls.pos = saved_pos
+		} else {
+			// show the original buffer
+			ls.refresh_line()
+		}
+		// navigate through the completions
+		r = u.get_rune(ls.ifd, nil)
+		if r == KEYCODE_NULL {
+			// error on read
+			stop = true
+		} else if r == KEYCODE_TAB {
+			// loop through the completions
+			idx = (idx + 1) % (len(lc) + 1)
+			if idx == len(lc) {
+				beep()
 			}
-			// navigate through the completions
-			u := utf8{}
-			r = u.get_rune(ls.ifd, nil)
-			if r == KEYCODE_NULL {
-				// error on read
-				stop = true
-			} else if r == KEYCODE_TAB {
-				// loop through the completions
-				idx = (idx + 1) % (len(lc) + 1)
-				if idx == len(lc) {
-					beep()
+		} else if r == KEYCODE_ESC {
+			// could be an escape, could be an escape sequence
+			if would_block(ls.ifd, &TIMEOUT_20ms) {
+				// nothing more to read, looks like a single escape
+				// re-show the original buffer
+				if idx < len(lc) {
+					ls.refresh_line()
 				}
-			} else if r == KEYCODE_ESC {
-				// could be an escape, could be an escape sequence
-				if would_block(ls.ifd, &TIMEOUT_20ms) {
-					// nothing more to read, looks like a single escape
-					// re-show the original buffer
-					if idx < len(lc) {
-						ls.refresh_line()
-					}
-					// don't pass the escape key back
-					r = KEYCODE_NULL
-				} else {
-					// probably an escape sequence
-					// update the buffer and return
-					if idx < len(lc) {
-						ls.buf = []rune(lc[idx])
-						ls.pos = len(ls.buf)
-					}
-				}
-				stop = true
+				// don't pass the escape key back
+				r = KEYCODE_NULL
 			} else {
+				// probably an escape sequence
 				// update the buffer and return
 				if idx < len(lc) {
 					ls.buf = []rune(lc[idx])
 					ls.pos = len(ls.buf)
 				}
-				stop = true
 			}
+			stop = true
+		} else {
+			// update the buffer and return
+			if idx < len(lc) {
+				ls.buf = []rune(lc[idx])
+				ls.pos = len(ls.buf)
+			}
+			stop = true
 		}
 	}
 	// return the last rune read
@@ -695,12 +695,16 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 		r := u.get_rune(STDIN, nil)
 		if r == KEYCODE_NULL {
 			continue
-		} else if r == KEYCODE_TAB && l.completion_callback != nil {
+		}
+		// Autocomplete when the callback is set.
+		// It returns the character to be handled next.
+		if r == KEYCODE_TAB && l.completion_callback != nil {
 			r = ls.complete_line()
 			if r == KEYCODE_NULL {
 				continue
 			}
-		} else if r == KEYCODE_CR || r == l.hotkey {
+		}
+		if r == KEYCODE_CR || r == l.hotkey {
 			l.history_pop(-1)
 			if l.hints_callback != nil {
 				// Refresh the line without hints to leave the
@@ -825,8 +829,6 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			ls.edit_insert(r)
 		}
 	}
-
-	//return "", nil
 }
 
 //-----------------------------------------------------------------------------
