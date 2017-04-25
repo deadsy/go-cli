@@ -1,14 +1,14 @@
 //-----------------------------------------------------------------------------
 /*
 
-linenoise for golang
+Line Editing
 
 See: https://github.com/deadsy/go_linenoise
 
 Based on: http://github.com/antirez/linenoise
 
 Notes on Unicode: This codes operates on UTF8 codepoints. It assumes each glyph
-occupies k columns, where k is a positive integer. It assumes the runewidth
+occupies k columns, where k is an integer >= 0. It assumes the runewidth
 call will tell us the number of columns taken by a UTF8 string. These assumptions
 won't be true for all character sets. If you don't have a monospaced version of the
 character being rendered then these assumptions will fail and odd things will
@@ -69,6 +69,16 @@ var TIMEOUT_20ms = syscall.Timeval{0, 20 * 1000}
 var TIMEOUT_10ms = syscall.Timeval{0, 10 * 1000}
 
 var QUIT = errors.New("quit")
+
+//-----------------------------------------------------------------------------
+
+// boolean to integer
+func btoi(x bool) int {
+	if x {
+		return 1
+	}
+	return 0
+}
 
 //-----------------------------------------------------------------------------
 // control the terminal mode
@@ -358,63 +368,61 @@ func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
 
 // show hints to the right of the cursor
 func (ls *linestate) refresh_show_hints() []string {
-
+	// do we have a hints callback?
 	if ls.ts.hints_callback == nil {
 		// no hints
 		return nil
 	}
-
-	/*
-
-	   if len(self.prompt) + len(self.buf) >= self.cols:
-	     # no space to display hints
-	     return []
-	   # get the hint
-	   result = self.ts.hints_callback(str(self))
-	   if result is None:
-	     # no hints
-	     return []
-	   (hint, color, bold) = result
-	   if hint is None or len(hint) == 0:
-	     # no hints
-	     return []
-	   # work out the hint length
-	   hlen = min(len(hint), self.cols - len(self.prompt) - len(self.buf))
-	   seq = []
-	   if bold and color < 0:
-	     color = 37
-	   if color >= 0 or bold:
-	     seq.append('\033[%d;%d;49m' % ((0,1)[bold], color))
-	   seq.append(hint[:hlen])
-	   if color >= 0 or bold:
-	     seq.append('\033[0m')
-	   return seq
-	*/
-
-	return nil
+	// How many columns do we have for the hint?
+	hint_cols := ls.cols - ls.prompt_width - runewidth.StringWidth(string(ls.buf))
+	if hint_cols <= 0 {
+		// no space to display hints
+		return nil
+	}
+	// get the hint
+	h := ls.ts.hints_callback(string(ls.buf))
+	if h == nil || len(h.Hint) == 0 {
+		// no hints
+		return nil
+	}
+	// trim the hint until it fits
+	h_end := len(h.Hint)
+	for runewidth.StringWidth(h.Hint[:h_end]) > hint_cols {
+		h_end -= 1
+	}
+	// color fixup
+	if h.Bold && h.Color < 0 {
+		h.Color = 37
+	}
+	// build the output string
+	seq := make([]string, 0, 3)
+	if h.Color >= 0 || h.Bold {
+		seq = append(seq, fmt.Sprintf("\033[%d;%d;49m", btoi(h.Bold), h.Color))
+	}
+	seq = append(seq, h.Hint[:h_end])
+	if h.Color >= 0 || h.Bold {
+		seq = append(seq, "\033[0m")
+	}
+	return seq
 }
 
 // single line refresh
 func (ls *linestate) refresh_singleline() {
-
 	// indices within buffer to be rendered
 	b_start := 0
 	b_end := len(ls.buf)
-
 	// trim the left hand side to keep the cursor position on the screen
 	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
 	for ls.prompt_width+pos_width >= ls.cols {
 		b_start += 1
 		pos_width = runewidth.StringWidth(string(ls.buf[b_start:ls.pos]))
 	}
-
 	// trim the right hand side - don't print beyond max columns
 	buf_width := runewidth.StringWidth(string(ls.buf[b_start:b_end]))
 	for ls.prompt_width+buf_width >= ls.cols {
 		b_end -= 1
 		buf_width = runewidth.StringWidth(string(ls.buf[b_start:b_end]))
 	}
-
 	// build the output string
 	seq := make([]string, 0, 6)
 	// cursor to the left edge
@@ -433,6 +441,7 @@ func (ls *linestate) refresh_singleline() {
 	puts(ls.ofd, strings.Join(seq, ""))
 }
 
+// TODO
 // multiline refresh
 func (ls *linestate) refresh_multiline() {
 	panic("")
@@ -670,12 +679,6 @@ func (l *linenoise) disable_rawmode(fd int) error {
 	}
 	l.rawmode = false
 	return nil
-}
-
-//-----------------------------------------------------------------------------
-
-// Restore STDIN to the orignal mode
-func (l *linenoise) atexit() {
 }
 
 //-----------------------------------------------------------------------------

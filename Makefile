@@ -1,5 +1,5 @@
 
-DIRS = linenoise_test cli_test \
+DIRS = line cli \
 
 all:
 	for dir in $(DIRS); do \
