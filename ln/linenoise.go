@@ -441,10 +441,61 @@ func (ls *linestate) refresh_singleline() {
 	puts(ls.ofd, strings.Join(seq, ""))
 }
 
-// TODO
 // multiline refresh
 func (ls *linestate) refresh_multiline() {
-	panic("")
+	buf_width := runewidth.StringWidth(string(ls.buf))
+	old_rows := ls.maxrows
+	// cursor position relative to row
+	rpos := (ls.prompt_width + ls.oldpos + ls.cols) / ls.cols
+	// rows used by current buf
+	rows := (ls.prompt_width + buf_width + ls.cols - 1) / ls.cols
+	// Update maxrows if needed
+	if rows > ls.maxrows {
+		ls.maxrows = rows
+	}
+	// build the output string
+	seq := make([]string, 0, 15)
+	// First step: clear all the lines used before. To do so start by going to the last row.
+	if old_rows-rpos > 0 {
+		seq = append(seq, fmt.Sprintf("\x1b[%dB", old_rows-rpos))
+	}
+	// Now for every row clear it, go up.
+	for j := 0; j < old_rows-1; j++ {
+		seq = append(seq, "\r\x1b[0K\x1b[1A")
+	}
+	// Clear the top line.
+	seq = append(seq, "\r\x1b[0K")
+	// Write the prompt and the current buffer content
+	seq = append(seq, ls.prompt)
+	seq = append(seq, string(ls.buf))
+	// Show hints (if any)
+	seq = append(seq, ls.refresh_show_hints()...)
+	// If we are at the very end of the screen with our prompt, we need to
+	// emit a newline and move the prompt to the first column.
+	if ls.pos != 0 && ls.pos == buf_width && (ls.pos+ls.prompt_width)%ls.cols == 0 {
+		seq = append(seq, "\n\r")
+		rows += 1
+		if rows > ls.maxrows {
+			ls.maxrows = rows
+		}
+	}
+	// Move cursor to right position.
+	rpos2 := (ls.prompt_width + ls.pos + ls.cols) / ls.cols // current cursor relative row.
+	// Go up till we reach the expected positon.
+	if rows-rpos2 > 0 {
+		seq = append(seq, fmt.Sprintf("\x1b[%dA", rows-rpos2))
+	}
+	// Set column
+	col := (ls.prompt_width + ls.pos) % ls.cols
+	if col != 0 {
+		seq = append(seq, fmt.Sprintf("\r\x1b[%dC", col))
+	} else {
+		seq = append(seq, "\r")
+	}
+	// save the cursor position
+	ls.oldpos = ls.pos
+	// write it out
+	puts(ls.ofd, strings.Join(seq, ""))
 }
 
 // refresh the edit line
