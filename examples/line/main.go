@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deadsy/go_linenoise/ln"
+	"github.com/deadsy/go-cli"
 	runewidth "github.com/mattn/go-runewidth"
 )
 
@@ -35,10 +35,10 @@ func completion(s string) []string {
 }
 
 // Return the hints for this command.
-func hints(s string) *ln.Hint {
+func hints(s string) *cli.Hint {
 	if s == "hello" {
 		// string, color, bold
-		return &ln.Hint{" World", 35, false}
+		return &cli.Hint{" World", 35, false}
 	}
 	return nil
 }
@@ -66,7 +66,7 @@ func main() {
 	loop_flag := flag.Bool("loop", false, "run a loop function with hotkey exit")
 	flag.Parse()
 
-	l := ln.NewLineNoise()
+	l := cli.NewLineNoise()
 
 	if *multiline_flag {
 		l.SetMultiline(true)
@@ -76,7 +76,7 @@ func main() {
 		os.Exit(0)
 	} else if *loop_flag {
 		fmt.Printf("looping: press ctrl-d to exit\n")
-		rc := l.Loop(loop, ln.KEYCODE_CTRL_D)
+		rc := l.Loop(loop, cli.KEYCODE_CTRL_D)
 		if rc {
 			fmt.Printf("loop completed\n")
 		} else {
@@ -104,7 +104,7 @@ func main() {
 	for {
 		s, err := l.Read(PROMPT, "")
 		if err != nil {
-			if err == ln.QUIT {
+			if err == cli.QUIT {
 				break
 			}
 			log.Printf("%s\n", err)

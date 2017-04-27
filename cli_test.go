@@ -1,4 +1,4 @@
-package ln
+package cli
 
 import "testing"
 

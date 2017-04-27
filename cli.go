@@ -14,7 +14,7 @@ Implements a CLI with:
 */
 //-----------------------------------------------------------------------------
 
-package ln
+package cli
 
 import (
 	"errors"
