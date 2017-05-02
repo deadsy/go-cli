@@ -19,23 +19,22 @@ import (
 
 var cmd_help = cli.Leaf{
 	Descr: "general help",
-	F: func(ui cli.UI, args []string) {
-		app.GeneralHelp()
+	F: func(c *cli.CLI, args []string) {
+		c.GeneralHelp()
 	},
 }
 
 var cmd_history = cli.Leaf{
 	Descr: "command history",
-	F: func(ui cli.UI, args []string) {
-		s := app.DisplayHistory(args)
-		app.SetLine(s)
+	F: func(c *cli.CLI, args []string) {
+		c.SetLine(c.DisplayHistory(args))
 	},
 }
 
 var cmd_exit = cli.Leaf{
 	Descr: "exit application",
-	F: func(ui cli.UI, args []string) {
-		app.Exit()
+	F: func(c *cli.CLI, args []string) {
+		c.Exit()
 	},
 }
 
@@ -56,60 +55,60 @@ func loop() bool {
 
 var a0_func = cli.Leaf{
 	Descr: "a0 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("a0 function arguments %v\n", args))
-		ui.Put("Looping... Ctrl-D to exit\n")
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("a0 function arguments %v\n", args))
+		c.Put("Looping... Ctrl-D to exit\n")
 		loop_idx = 0
-		app.Loop(loop, cli.KEYCODE_CTRL_D)
+		c.Loop(loop, cli.KEYCODE_CTRL_D)
 	},
 }
 
 var a1_func = cli.Leaf{
 	Descr: "a1 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("a1 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("a1 function arguments %v\n", args))
 	},
 }
 
 var a2_func = cli.Leaf{
 	Descr: "a2 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("a2 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("a2 function arguments %v\n", args))
 	},
 }
 
 var b0_func = cli.Leaf{
 	Descr: "b0 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("b0 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("b0 function arguments %v\n", args))
 	},
 }
 
 var b1_func = cli.Leaf{
 	Descr: "b1 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("b1 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("b1 function arguments %v\n", args))
 	},
 }
 
 var c0_func = cli.Leaf{
 	Descr: "c0 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("c0 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("c0 function arguments %v\n", args))
 	},
 }
 
 var c1_func = cli.Leaf{
 	Descr: "c1 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("c1 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("c1 function arguments %v\n", args))
 	},
 }
 
 var c2_func = cli.Leaf{
 	Descr: "c2 function description",
-	F: func(ui cli.UI, args []string) {
-		ui.Put(fmt.Sprintf("c2 function arguments %v\n", args))
+	F: func(c *cli.CLI, args []string) {
+		c.Put(fmt.Sprintf("c2 function arguments %v\n", args))
 	},
 }
 
@@ -154,28 +153,25 @@ var menu_root = cli.Menu{
 
 //-----------------------------------------------------------------------------
 
-type user_interface struct {
+type user_app struct {
 }
 
-func NewUI() *user_interface {
-	ui := user_interface{}
-	return &ui
+func NewUserApp() *user_app {
+	app := user_app{}
+	return &app
 }
 
-func (ui *user_interface) Put(s string) {
+func (user *user_app) Put(s string) {
 	fmt.Printf("%s", s)
 }
 
 //-----------------------------------------------------------------------------
-// setup the cli object
-
-var ui = NewUI()
-var app = cli.NewCLI(ui, "history.txt")
 
 func main() {
-	app.SetRoot(menu_root)
-	app.SetPrompt("cli> ")
-	app.Run()
+	c := cli.NewCLI(NewUserApp(), "history.txt")
+	c.SetRoot(menu_root)
+	c.SetPrompt("cli> ")
+	c.RunLoop()
 	os.Exit(0)
 }
 
