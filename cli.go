@@ -424,21 +424,20 @@ func (c *CLI) parse_cmdline(line string) string {
 //-----------------------------------------------------------------------------
 
 type CLI struct {
-	User      USER
-	ln        *linenoise
-	root      Menu
-	next_line string
-	prompt    string
-	running   bool
+	User      USER       // user provided object
+	ln        *linenoise // line editing object
+	root      Menu       // root of menu structure
+	next_line string     // next line set by a leaf function
+	prompt    string     // cli prompt string
+	running   bool       // is the cli running?
 }
 
-func NewCLI(user USER, history string) *CLI {
+func NewCLI(user USER) *CLI {
 	c := CLI{}
 	c.User = user
 	c.ln = NewLineNoise()
 	c.ln.SetCompletionCallback(c.completion_callback)
 	c.ln.SetHotkey('?')
-	c.ln.HistoryLoad(history)
 	c.prompt = "> "
 	c.running = true
 	return &c
@@ -474,6 +473,16 @@ func (c *CLI) GeneralHelp() {
 	c.display_function_help(general_help)
 }
 
+// Load command history from a file.
+func (c *CLI) HistoryLoad(path string) {
+	c.ln.HistoryLoad(path)
+}
+
+// Save command history to a file.
+func (c *CLI) HistorySave(path string) {
+	c.ln.HistorySave(path)
+}
+
 // Display the command history.
 func (c *CLI) DisplayHistory(args []string) string {
 	// get the history
@@ -504,22 +513,6 @@ func (c *CLI) DisplayHistory(args []string) string {
 		}
 	}
 	return ""
-}
-
-// Get and process CLI commands in a loop.
-func (c *CLI) RunLoop() {
-	line := ""
-	for c.running {
-		var err error
-		line, err = c.ln.Read(c.prompt, line)
-		if err == nil {
-			line = c.parse_cmdline(line)
-		} else {
-			// exit: ctrl-C/ctrl-D
-			c.running = false
-		}
-	}
-	c.ln.HistorySave("history.txt")
 }
 
 // Get and process a CLI command.

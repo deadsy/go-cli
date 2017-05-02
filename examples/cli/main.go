@@ -168,10 +168,15 @@ func (user *user_app) Put(s string) {
 //-----------------------------------------------------------------------------
 
 func main() {
-	c := cli.NewCLI(NewUserApp(), "history.txt")
+	hpath := "history.txt"
+	c := cli.NewCLI(NewUserApp())
+	c.HistoryLoad(hpath)
 	c.SetRoot(menu_root)
 	c.SetPrompt("cli> ")
-	c.RunLoop()
+	for c.Running() {
+		c.Run()
+	}
+	c.HistorySave(hpath)
 	os.Exit(0)
 }
 

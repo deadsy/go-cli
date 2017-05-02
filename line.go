@@ -3,7 +3,7 @@
 
 Line Editing
 
-See: https://github.com/deadsy/go_linenoise
+See: https://github.com/deadsy/go-cli
 
 Based on: http://github.com/antirez/linenoise
 
@@ -33,9 +33,9 @@ import (
 	"unsafe"
 
 	"github.com/creack/termios/raw"
+	"github.com/deadsy/go-fdset"
 	"github.com/mattn/go-isatty"
 	"github.com/mattn/go-runewidth"
-	"github.com/mistsys/mist_go_utils/fdset"
 )
 
 //-----------------------------------------------------------------------------
