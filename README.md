@@ -30,11 +30,11 @@ The line editor can be used standalone. The CLI makes use of the line editor.
 
 ## Examples
 
-### ./example/line/main.go
+### ./examples/line/main.go
 
 Matches the example code in the C version of the linenoise library.
 
-### ./example/cli/main.go
+### ./examples/cli/main.go
 
 Implements an example of a heirarchical command line interface.
 
