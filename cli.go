@@ -424,12 +424,13 @@ func (c *CLI) parse_cmdline(line string) string {
 //-----------------------------------------------------------------------------
 
 type CLI struct {
-	User      USER       // user provided object
-	ln        *linenoise // line editing object
-	root      Menu       // root of menu structure
-	next_line string     // next line set by a leaf function
-	prompt    string     // cli prompt string
-	running   bool       // is the cli running?
+	User         USER       // user provided object
+	ln           *linenoise // line editing object
+	root         Menu       // root of menu structure
+	current_line string     // current command line
+	next_line    string     // next line set by a leaf function
+	prompt       string     // cli prompt string
+	running      bool       // is the cli running?
 }
 
 func NewCLI(user USER) *CLI {
@@ -517,10 +518,9 @@ func (c *CLI) DisplayHistory(args []string) string {
 
 // Get and process a CLI command.
 func (c *CLI) Run() {
-	line := ""
-	line, err := c.ln.Read(c.prompt, line)
+	line, err := c.ln.Read(c.prompt, c.current_line)
 	if err == nil {
-		line = c.parse_cmdline(line)
+		c.current_line = c.parse_cmdline(line)
 	} else {
 		// exit: ctrl-C/ctrl-D
 		c.running = false
