@@ -1,3 +1,5 @@
+[![GoDoc](https://godoc.org/github.com/deadsy/go-cli?status.svg)](https://godoc.org/github.com/deadsy/go-cli)
+
 # go-cli
 
 A Go based line editor and command line interface.
