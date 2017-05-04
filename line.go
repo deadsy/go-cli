@@ -831,10 +831,10 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			}
 		} else if r == KEYCODE_CTRL_A {
 			// go to the start of the line
-			//ls.edit_move_home()
+			ls.edit_move_home()
 		} else if r == KEYCODE_CTRL_B {
 			// cursor left
-			//ls.edit_move_left()
+			ls.edit_move_left()
 		} else if r == KEYCODE_CTRL_C {
 			// return QUIT
 			return "", QUIT
