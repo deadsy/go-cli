@@ -1,3 +1,5 @@
+
+[![Go Report Card](https://goreportcard.com/badge/github.com/deadsy/go-cli)](https://goreportcard.com/report/github.com/deadsy/go-cli)
 [![GoDoc](https://godoc.org/github.com/deadsy/go-cli?status.svg)](https://godoc.org/github.com/deadsy/go-cli)
 
 # go-cli
