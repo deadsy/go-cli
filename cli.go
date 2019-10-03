@@ -27,27 +27,28 @@ import (
 
 //-----------------------------------------------------------------------------
 
-// Help
+// Help is a parameter help element.
 type Help struct {
 	Parm  string // parameter
 	Descr string // description
 }
 
-// USER: This is a user object made available to each leaf function.
+// USER is an interface for low-level UI operations.
+// A user provide object with this interface is passed to each leaf function.
 type USER interface {
 	Put(s string)
 }
 
-// Menu Item: 3 forms
+// MenuItem has 3 forms:
 // {name string, submenu Menu, description string}: reference to submenu
 // {name string, leaf func}: leaf command with generic <cr> help
 // {name string, leaf func, help []Help}: leaf command with specific argument help
 type MenuItem []interface{}
 
-// Menu: a set of menu items
+// Menu is a set of menu items.
 type Menu []MenuItem
 
-// Leaf: leaf function within menu hierarchy.
+// Leaf is a leaf function within menu hierarchy.
 type Leaf struct {
 	Descr string               // description
 	F     func(*CLI, []string) // leaf function
@@ -56,11 +57,11 @@ type Leaf struct {
 //-----------------------------------------------------------------------------
 // common help for cli leaf functions
 
-var cr_help = []Help{
+var crHelp = []Help{
 	{"<cr>", "perform the function"},
 }
 
-var general_help = []Help{
+var generalHelp = []Help{
 	{"?", "display command help - Eg. ?, show ?, s?"},
 	{"<up>", "go backwards in command history"},
 	{"<dn>", "go forwards in command history"},
@@ -68,6 +69,7 @@ var general_help = []Help{
 	{"* note", "commands can be incomplete - Eg. sh = sho = show"},
 }
 
+// HistoryHelp is help for the history command.
 var HistoryHelp = []Help{
 	{"<cr>", "display all history"},
 	{"<index>", "recall history entry <index>"},
@@ -75,20 +77,20 @@ var HistoryHelp = []Help{
 
 //-----------------------------------------------------------------------------
 
-const inv_arg = "invalid argument\n"
+const invArg = "invalid argument\n"
 
-// Convert a number string to an integer.
+// IntArg converts a number string to an integer.
 func IntArg(user USER, arg string, limits [2]int, base int) (int, error) {
 	// convert the integer
 	x, err := strconv.ParseInt(arg, base, 64)
 	if err != nil {
-		user.Put(inv_arg)
+		user.Put(invArg)
 		return 0, err
 	}
 	// check the limits
 	val := int(x)
 	if val < limits[0] || val > limits[1] {
-		user.Put(inv_arg)
+		user.Put(invArg)
 		return 0, errors.New("out of range")
 	}
 	return val, nil
@@ -96,7 +98,7 @@ func IntArg(user USER, arg string, limits [2]int, base int) (int, error) {
 
 //-----------------------------------------------------------------------------
 
-// Return a string for a table of row by column strings
+// TableString returns a string for a table of row by column strings.
 // Each column string will be left justified and aligned.
 func TableString(
 	rows [][]string, // table rows [[col0, col1, col2...,colN]...]
@@ -279,7 +281,7 @@ func (c *CLI) function_help(item MenuItem) {
 	if len(item) == 3 {
 		help = item[2].([]Help)
 	} else {
-		help = cr_help
+		help = crHelp
 	}
 	c.display_function_help(help)
 }
@@ -309,16 +311,15 @@ func (c *CLI) completion_callback(cmd_line string) []string {
 			if len(cmd) < len(item[0].(string)) {
 				// it's an unambiguous single match, but we still complete it
 				return completions(line, cmd, menu_names(matches), len(cmd_line))
+			}
+			// we have the whole command - is this a submenu or leaf?
+			if submenu, ok := item[1].(Menu); ok {
+				// submenu: switch to the submenu and continue parsing
+				menu = submenu
+				continue
 			} else {
-				// we have the whole command - is this a submenu or leaf?
-				if submenu, ok := item[1].(Menu); ok {
-					// submenu: switch to the submenu and continue parsing
-					menu = submenu
-					continue
-				} else {
-					// leaf function: no completions to offer
-					return nil
-				}
+				// leaf function: no completions to offer
+				return nil
 			}
 		} else {
 			// Multiple matches at this level. Return the matches.
@@ -334,7 +335,7 @@ func (c *CLI) completion_callback(cmd_line string) []string {
 // Parse and process the current command line.
 // Return a string for the new command line.
 // The return string is generally empty, but may be non-empty for command history.
-func (c *CLI) parse_cmdline(line string) string {
+func (c *CLI) parseCmdline(line string) string {
 	// scan the command line into a list of tokens
 	cmd_list := make([]string, 0, 8)
 	for _, s := range strings.Split(line, " ") {
@@ -403,12 +404,11 @@ func (c *CLI) parse_cmdline(line string) string {
 					s := c.next_line
 					c.next_line = ""
 					return s
-				} else {
-					// add the command to history
-					c.ln.HistoryAdd(strings.TrimSpace(line))
-					// return to an empty line
-					return ""
 				}
+				// add the command to history
+				c.ln.HistoryAdd(strings.TrimSpace(line))
+				// return to an empty line
+				return ""
 			}
 		} else {
 			// multiple matches - ambiguous command
@@ -423,16 +423,18 @@ func (c *CLI) parse_cmdline(line string) string {
 
 //-----------------------------------------------------------------------------
 
+// CLI stores the CLI state.
 type CLI struct {
-	User         USER       // user provided object
-	ln           *Linenoise // line editing object
-	root         Menu       // root of menu structure
-	current_line string     // current command line
-	next_line    string     // next line set by a leaf function
-	prompt       string     // cli prompt string
-	running      bool       // is the cli running?
+	User        USER       // user provided object
+	ln          *Linenoise // line editing object
+	root        Menu       // root of menu structure
+	currentLine string     // current command line
+	next_line   string     // next line set by a leaf function
+	prompt      string     // cli prompt string
+	running     bool       // is the cli running?
 }
 
+// NewCLI returns a new CLI object.
 func NewCLI(user USER) *CLI {
 	c := CLI{}
 	c.User = user
@@ -444,50 +446,50 @@ func NewCLI(user USER) *CLI {
 	return &c
 }
 
-// set the menu root
+// SetRoot sets the menu root.
 func (c *CLI) SetRoot(root []MenuItem) {
 	c.root = root
 }
 
-// set the command prompt
+// SetPrompt sets the command prompt.
 func (c *CLI) SetPrompt(prompt string) {
 	c.prompt = prompt
 }
 
-// Set the next command line.
+// SetLine sets the next command line.
 func (c *CLI) SetLine(line string) {
 	c.next_line = line
 }
 
-// Passthrough to the wait for hotkey Loop().
+// Loop is a passthrough to the wait for hotkey Loop().
 func (c *CLI) Loop(fn func() bool, exit_key rune) bool {
 	return c.ln.Loop(fn, exit_key)
 }
 
-// Passthrough to the user provided Put().
+// Put is a passthrough to the user provided Put().
 func (c *CLI) Put(s string) {
 	c.User.Put(s)
 }
 
-// Display general help.
+// GeneralHelp displays general help.
 func (c *CLI) GeneralHelp() {
-	c.display_function_help(general_help)
+	c.display_function_help(generalHelp)
 }
 
-// Load command history from a file.
+// HistoryLoad loads command history from a file.
 func (c *CLI) HistoryLoad(path string) {
 	c.ln.HistoryLoad(path)
 }
 
-// Save command history to a file.
+// HistorySave saves command history to a file.
 func (c *CLI) HistorySave(path string) {
 	c.ln.HistorySave(path)
 }
 
-// Display the command history.
+// DisplayHistory displays the command history.
 func (c *CLI) DisplayHistory(args []string) string {
 	// get the history
-	h := c.ln.history_list()
+	h := c.ln.historyList()
 	n := len(h)
 	if len(args) == 1 {
 		// retrieve a specific history entry
@@ -501,32 +503,32 @@ func (c *CLI) DisplayHistory(args []string) string {
 		// history entry. Make it unique by adding a trailing whitespace. The other
 		// entries have been stripped prior to being added to history.
 		return h[n-idx-1] + " "
-	} else {
-		// display all history
-		if n > 0 {
-			s := make([]string, n)
-			for i := range s {
-				s[i] = fmt.Sprintf("%-3d: %s", n-i-1, h[i])
-			}
-			c.Put(strings.Join(s, "\n") + "\n")
-		} else {
-			c.Put("no history\n")
+	}
+	// display all history
+	if n > 0 {
+		s := make([]string, n)
+		for i := range s {
+			s[i] = fmt.Sprintf("%-3d: %s", n-i-1, h[i])
 		}
+		c.Put(strings.Join(s, "\n") + "\n")
+	} else {
+		c.Put("no history\n")
 	}
 	return ""
 }
 
-// Get and process a CLI command.
+// Run gets and processes a CLI command.
 func (c *CLI) Run() {
-	line, err := c.ln.Read(c.prompt, c.current_line)
+	line, err := c.ln.Read(c.prompt, c.currentLine)
 	if err == nil {
-		c.current_line = c.parse_cmdline(line)
+		c.currentLine = c.parseCmdline(line)
 	} else {
 		// exit: ctrl-C/ctrl-D
 		c.running = false
 	}
 }
 
+// Running returns true if the CLI is running.
 func (c *CLI) Running() bool {
 	return c.running
 }

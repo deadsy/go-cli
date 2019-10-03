@@ -223,7 +223,7 @@ func (u *utf8) getRune(fd int, timeout *syscall.Timeval) rune {
 //-----------------------------------------------------------------------------
 
 // If fd is not readable within the timeout period return true.
-func would_block(fd int, timeout *syscall.Timeval) bool {
+func wouldBlock(fd int, timeout *syscall.Timeval) bool {
 	rd := syscall.FdSet{}
 	fdset.Set(fd, &rd)
 	n, err := syscall.Select(fd+1, &rd, nil, nil, timeout)
@@ -249,7 +249,7 @@ func puts(fd int, s string) int {
 const defaultCols = 80
 
 // Get the horizontal cursor position
-func get_cursor_position(ifd, ofd int) int {
+func getCursorPosition(ifd, ofd int) int {
 	// query the cursor location
 	if puts(ofd, "\x1b[6n") != 4 {
 		return -1
@@ -295,7 +295,7 @@ func getColumns(ifd, ofd int) int {
 		return int(winsize[1])
 	}
 	// the ioctl failed - try using the terminal itself
-	start := get_cursor_position(ifd, ofd)
+	start := getCursorPosition(ifd, ofd)
 	if start < 0 {
 		return defaultCols
 	}
@@ -303,7 +303,7 @@ func getColumns(ifd, ofd int) int {
 	if puts(ofd, "\x1b[999C") != 6 {
 		return defaultCols
 	}
-	cols := get_cursor_position(ifd, ofd)
+	cols := getCursorPosition(ifd, ofd)
 	if cols < 0 {
 		return defaultCols
 	}
@@ -317,7 +317,7 @@ func getColumns(ifd, ofd int) int {
 //-----------------------------------------------------------------------------
 
 // Clear the screen.
-func clear_screen() {
+func clearScreen() {
 	puts(syscall.Stdout, "\x1b[H\x1b[2J")
 }
 
@@ -335,7 +335,7 @@ var unsupported = map[string]bool{
 }
 
 // Return true if we know we don't support this terminal.
-func unsupported_term() bool {
+func unsupportedTerm() bool {
 	_, ok := unsupported[os.Getenv("TERM")]
 	return ok
 }
@@ -345,9 +345,9 @@ func unsupported_term() bool {
 type linestate struct {
 	ifd, ofd     int        // stdin/stdout file descriptors
 	prompt       string     // prompt string
-	prompt_width int        // prompt width in terminal columns
+	promptWidth  int        // prompt width in terminal columns
 	ts           *Linenoise // terminal state
-	history_idx  int        // history index we are currently editing, 0 is the LAST entry
+	historyIndex int        // history index we are currently editing, 0 is the LAST entry
 	buf          []rune     // line buffer
 	cols         int        // number of columns in terminal
 	pos          int        // current cursor position within line buffer
@@ -360,34 +360,34 @@ func newLineState(ifd, ofd int, prompt string, ts *Linenoise) *linestate {
 	ls.ifd = ifd
 	ls.ofd = ofd
 	ls.prompt = prompt
-	ls.prompt_width = runewidth.StringWidth(prompt)
+	ls.promptWidth = runewidth.StringWidth(prompt)
 	ls.ts = ts
 	ls.cols = getColumns(ifd, ofd)
 	return &ls
 }
 
 // show hints to the right of the cursor
-func (ls *linestate) refresh_show_hints() []string {
+func (ls *linestate) refreshShowHints() []string {
 	// do we have a hints callback?
-	if ls.ts.hints_callback == nil {
+	if ls.ts.hintsCallback == nil {
 		// no hints
 		return nil
 	}
 	// How many columns do we have for the hint?
-	hint_cols := ls.cols - ls.prompt_width - runewidth.StringWidth(string(ls.buf))
-	if hint_cols <= 0 {
+	hintCols := ls.cols - ls.promptWidth - runewidth.StringWidth(string(ls.buf))
+	if hintCols <= 0 {
 		// no space to display hints
 		return nil
 	}
 	// get the hint
-	h := ls.ts.hints_callback(string(ls.buf))
+	h := ls.ts.hintsCallback(string(ls.buf))
 	if h == nil || len(h.Hint) == 0 {
 		// no hints
 		return nil
 	}
 	// trim the hint until it fits
 	hEnd := len(h.Hint)
-	for runewidth.StringWidth(h.Hint[:hEnd]) > hint_cols {
+	for runewidth.StringWidth(h.Hint[:hEnd]) > hintCols {
 		hEnd--
 	}
 	// color fixup
@@ -407,21 +407,21 @@ func (ls *linestate) refresh_show_hints() []string {
 }
 
 // single line refresh
-func (ls *linestate) refresh_singleline() {
+func (ls *linestate) refreshSingleline() {
 	// indices within buffer to be rendered
-	b_start := 0
-	b_end := len(ls.buf)
+	bStart := 0
+	bEnd := len(ls.buf)
 	// trim the left hand side to keep the cursor position on the screen
-	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
-	for ls.prompt_width+pos_width >= ls.cols {
-		b_start++
-		pos_width = runewidth.StringWidth(string(ls.buf[b_start:ls.pos]))
+	posWidth := runewidth.StringWidth(string(ls.buf[:ls.pos]))
+	for ls.promptWidth+posWidth >= ls.cols {
+		bStart++
+		posWidth = runewidth.StringWidth(string(ls.buf[bStart:ls.pos]))
 	}
 	// trim the right hand side - don't print beyond max columns
-	buf_width := runewidth.StringWidth(string(ls.buf[b_start:b_end]))
-	for ls.prompt_width+buf_width >= ls.cols {
-		b_end--
-		buf_width = runewidth.StringWidth(string(ls.buf[b_start:b_end]))
+	bufWidth := runewidth.StringWidth(string(ls.buf[bStart:bEnd]))
+	for ls.promptWidth+bufWidth >= ls.cols {
+		bEnd--
+		bufWidth = runewidth.StringWidth(string(ls.buf[bStart:bEnd]))
 	}
 	// build the output string
 	seq := make([]string, 0, 6)
@@ -430,25 +430,25 @@ func (ls *linestate) refresh_singleline() {
 	// write the prompt
 	seq = append(seq, ls.prompt)
 	// write the current buffer content
-	seq = append(seq, string(ls.buf[b_start:b_end]))
+	seq = append(seq, string(ls.buf[bStart:bEnd]))
 	// Show hints (if any)
-	seq = append(seq, ls.refresh_show_hints()...)
+	seq = append(seq, ls.refreshShowHints()...)
 	// Erase to right
 	seq = append(seq, "\x1b[0K")
 	// Move cursor to original position
-	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", ls.prompt_width+pos_width))
+	seq = append(seq, fmt.Sprintf("\r\x1b[%dC", ls.promptWidth+posWidth))
 	// write it out
 	puts(ls.ofd, strings.Join(seq, ""))
 }
 
 // multiline refresh
-func (ls *linestate) refresh_multiline() {
-	buf_width := runewidth.StringWidth(string(ls.buf))
-	old_rows := ls.maxrows
+func (ls *linestate) refreshMultiline() {
+	bufWidth := runewidth.StringWidth(string(ls.buf))
+	oldRows := ls.maxrows
 	// cursor position relative to row
-	rpos := (ls.prompt_width + ls.oldpos + ls.cols) / ls.cols
+	rpos := (ls.promptWidth + ls.oldpos + ls.cols) / ls.cols
 	// rows used by current buf
-	rows := (ls.prompt_width + buf_width + ls.cols - 1) / ls.cols
+	rows := (ls.promptWidth + bufWidth + ls.cols - 1) / ls.cols
 	// Update maxrows if needed
 	if rows > ls.maxrows {
 		ls.maxrows = rows
@@ -456,11 +456,11 @@ func (ls *linestate) refresh_multiline() {
 	// build the output string
 	seq := make([]string, 0, 15)
 	// First step: clear all the lines used before. To do so start by going to the last row.
-	if old_rows-rpos > 0 {
-		seq = append(seq, fmt.Sprintf("\x1b[%dB", old_rows-rpos))
+	if oldRows-rpos > 0 {
+		seq = append(seq, fmt.Sprintf("\x1b[%dB", oldRows-rpos))
 	}
 	// Now for every row clear it, go up.
-	for j := 0; j < old_rows-1; j++ {
+	for j := 0; j < oldRows-1; j++ {
 		seq = append(seq, "\r\x1b[0K\x1b[1A")
 	}
 	// Clear the top line.
@@ -469,10 +469,10 @@ func (ls *linestate) refresh_multiline() {
 	seq = append(seq, ls.prompt)
 	seq = append(seq, string(ls.buf))
 	// Show hints (if any)
-	seq = append(seq, ls.refresh_show_hints()...)
+	seq = append(seq, ls.refreshShowHints()...)
 	// If we are at the very end of the screen with our prompt, we need to
 	// emit a newline and move the prompt to the first column.
-	if ls.pos != 0 && ls.pos == buf_width && (ls.pos+ls.prompt_width)%ls.cols == 0 {
+	if ls.pos != 0 && ls.pos == bufWidth && (ls.pos+ls.promptWidth)%ls.cols == 0 {
 		seq = append(seq, "\n\r")
 		rows++
 		if rows > ls.maxrows {
@@ -480,13 +480,13 @@ func (ls *linestate) refresh_multiline() {
 		}
 	}
 	// Move cursor to right position.
-	rpos2 := (ls.prompt_width + ls.pos + ls.cols) / ls.cols // current cursor relative row.
+	rpos2 := (ls.promptWidth + ls.pos + ls.cols) / ls.cols // current cursor relative row.
 	// Go up till we reach the expected positon.
 	if rows-rpos2 > 0 {
 		seq = append(seq, fmt.Sprintf("\x1b[%dA", rows-rpos2))
 	}
 	// Set column
-	col := (ls.prompt_width + ls.pos) % ls.cols
+	col := (ls.promptWidth + ls.pos) % ls.cols
 	if col != 0 {
 		seq = append(seq, fmt.Sprintf("\r\x1b[%dC", col))
 	} else {
@@ -499,11 +499,11 @@ func (ls *linestate) refresh_multiline() {
 }
 
 // refresh the edit line
-func (ls *linestate) refresh_line() {
+func (ls *linestate) refreshLine() {
 	if ls.ts.mlmode {
-		ls.refresh_multiline()
+		ls.refreshMultiline()
 	} else {
-		ls.refresh_singleline()
+		ls.refreshSingleline()
 	}
 }
 
@@ -511,7 +511,7 @@ func (ls *linestate) refresh_line() {
 func (ls *linestate) editDelete() {
 	if len(ls.buf) > 0 && ls.pos < len(ls.buf) {
 		ls.buf = append(ls.buf[:ls.pos], ls.buf[ls.pos+1:]...)
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -520,7 +520,7 @@ func (ls *linestate) editBackspace() {
 	if ls.pos > 0 && len(ls.buf) > 0 {
 		ls.buf = append(ls.buf[:ls.pos-1], ls.buf[ls.pos:]...)
 		ls.pos--
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -528,7 +528,7 @@ func (ls *linestate) editBackspace() {
 func (ls *linestate) editInsert(r rune) {
 	ls.buf = append(ls.buf[:ls.pos], append([]rune{r}, ls.buf[ls.pos:]...)...)
 	ls.pos++
-	ls.refresh_line()
+	ls.refreshLine()
 }
 
 // Swap current character with the previous character.
@@ -540,7 +540,7 @@ func (ls *linestate) editSwap() {
 		if ls.pos != len(ls.buf)-1 {
 			ls.pos++
 		}
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -548,14 +548,14 @@ func (ls *linestate) editSwap() {
 func (ls *linestate) editSet(s string) {
 	ls.buf = []rune(s)
 	ls.pos = len(ls.buf)
-	ls.refresh_line()
+	ls.refreshLine()
 }
 
 // Move cursor on the left.
 func (ls *linestate) editMoveLeft() {
 	if ls.pos > 0 {
 		ls.pos--
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -563,7 +563,7 @@ func (ls *linestate) editMoveLeft() {
 func (ls *linestate) editMoveRight() {
 	if ls.pos != len(ls.buf) {
 		ls.pos++
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -571,7 +571,7 @@ func (ls *linestate) editMoveRight() {
 func (ls *linestate) editMoveHome() {
 	if ls.pos > 0 {
 		ls.pos = 0
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
@@ -579,26 +579,26 @@ func (ls *linestate) editMoveHome() {
 func (ls *linestate) editMoveEnd() {
 	if ls.pos != len(ls.buf) {
 		ls.pos = len(ls.buf)
-		ls.refresh_line()
+		ls.refreshLine()
 	}
 }
 
 // Delete the line.
-func (ls *linestate) delete_line() {
+func (ls *linestate) deleteLine() {
 	ls.buf = nil // []rune{}
 	ls.pos = 0
-	ls.refresh_line()
+	ls.refreshLine()
 }
 
-// Delete from the current cursor postion to the end of the line.
-func (ls *linestate) delete_to_end() {
+// Delete from the current cursor position to the end of the line.
+func (ls *linestate) deleteToEnd() {
 	ls.buf = ls.buf[:ls.pos]
-	ls.refresh_line()
+	ls.refreshLine()
 }
 
 // Delete the previous space delimited word.
-func (ls *linestate) delete_prev_word() {
-	old_pos := ls.pos
+func (ls *linestate) deletePrevWord() {
+	oldPos := ls.pos
 	// remove spaces
 	for ls.pos > 0 && ls.buf[ls.pos-1] == ' ' {
 		ls.pos--
@@ -607,14 +607,14 @@ func (ls *linestate) delete_prev_word() {
 	for ls.pos > 0 && ls.buf[ls.pos-1] != ' ' {
 		ls.pos--
 	}
-	ls.buf = append(ls.buf[:ls.pos], ls.buf[old_pos:]...)
-	ls.refresh_line()
+	ls.buf = append(ls.buf[:ls.pos], ls.buf[oldPos:]...)
+	ls.refreshLine()
 }
 
 // Show completions for the current line.
-func (ls *linestate) complete_line() rune {
+func (ls *linestate) completeLine() rune {
 	// get a list of line completions
-	lc := ls.ts.completion_callback(ls.String())
+	lc := ls.ts.completionCallback(ls.String())
 	if len(lc) == 0 {
 		// no line completions
 		beep()
@@ -628,18 +628,18 @@ func (ls *linestate) complete_line() rune {
 	for !stop {
 		if idx < len(lc) {
 			// save the line buffer
-			saved_buf := ls.buf
-			saved_pos := ls.pos
+			savedBuf := ls.buf
+			savedPos := ls.pos
 			// show the completion
 			ls.buf = []rune(lc[idx])
 			ls.pos = len(ls.buf)
-			ls.refresh_line()
+			ls.refreshLine()
 			// restore the line buffer
-			ls.buf = saved_buf
-			ls.pos = saved_pos
+			ls.buf = savedBuf
+			ls.pos = savedPos
 		} else {
 			// show the original buffer
-			ls.refresh_line()
+			ls.refreshLine()
 		}
 		// navigate through the completions
 		r = u.getRune(ls.ifd, nil)
@@ -654,11 +654,11 @@ func (ls *linestate) complete_line() rune {
 			}
 		} else if r == KeycodeESC {
 			// could be an escape, could be an escape sequence
-			if would_block(ls.ifd, &timeout20ms) {
+			if wouldBlock(ls.ifd, &timeout20ms) {
 				// nothing more to read, looks like a single escape
 				// re-show the original buffer
 				if idx < len(lc) {
-					ls.refresh_line()
+					ls.refreshLine()
 				}
 				// don't pass the escape key back
 				r = KeycodeNull
@@ -693,21 +693,21 @@ func (ls *linestate) String() string {
 
 // Linenoise stores line editor state.
 type Linenoise struct {
-	history             []string              // list of history strings
-	history_maxlen      int                   // maximum number of history entries
-	rawmode             bool                  // are we in raw mode?
-	mlmode              bool                  // are we in multiline mode?
-	savedmode           *raw.Termios          // saved terminal mode
-	completion_callback func(string) []string // callback function for tab completion
-	hints_callback      func(string) *Hint    // callback function for hints
-	hotkey              rune                  // character for hotkey
-	scanner             *bufio.Scanner        // buffered IO scanner for file reading
+	history            []string              // list of history strings
+	historyMaxlen      int                   // maximum number of history entries
+	rawmode            bool                  // are we in raw mode?
+	mlmode             bool                  // are we in multiline mode?
+	savedmode          *raw.Termios          // saved terminal mode
+	completionCallback func(string) []string // callback function for tab completion
+	hintsCallback      func(string) *Hint    // callback function for hints
+	hotkey             rune                  // character for hotkey
+	scanner            *bufio.Scanner        // buffered IO scanner for file reading
 }
 
 // NewLineNoise returns a new line editor.
 func NewLineNoise() *Linenoise {
 	l := Linenoise{}
-	l.history_maxlen = 32
+	l.historyMaxlen = 32
 	return &l
 }
 
@@ -754,21 +754,21 @@ func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 		}
 		// Autocomplete when the callback is set.
 		// It returns the character to be handled next.
-		if r == KeycodeTAB && l.completion_callback != nil {
-			r = ls.complete_line()
+		if r == KeycodeTAB && l.completionCallback != nil {
+			r = ls.completeLine()
 			if r == KeycodeNull {
 				continue
 			}
 		}
 		if r == KeycodeCR || r == l.hotkey {
 			l.historyPop(-1)
-			if l.hints_callback != nil {
+			if l.hintsCallback != nil {
 				// Refresh the line without hints to leave the
 				// line as the user typed it after the newline.
-				hcb := l.hints_callback
-				l.hints_callback = nil
-				ls.refresh_line()
-				l.hints_callback = hcb
+				hcb := l.hintsCallback
+				l.hintsCallback = nil
+				ls.refreshLine()
+				l.hintsCallback = hcb
 			}
 			s := ls.String()
 			if r == l.hotkey {
@@ -780,7 +780,7 @@ func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			ls.editBackspace()
 
 		} else if r == KeycodeESC {
-			if would_block(ifd, &timeout20ms) {
+			if wouldBlock(ifd, &timeout20ms) {
 				// looks like a single escape- abandon the line
 				l.historyPop(-1)
 				return "", nil
@@ -859,11 +859,11 @@ func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			ls.editBackspace()
 		} else if r == KeycodeCtrlK {
 			// delete to the end of the line
-			ls.delete_to_end()
+			ls.deleteToEnd()
 		} else if r == KeycodeCtrlL {
 			// clear screen
-			clear_screen()
-			ls.refresh_line()
+			clearScreen()
+			ls.refreshLine()
 		} else if r == KeycodeCtrlN {
 			// next history item
 			ls.editSet(l.historyNext(ls))
@@ -875,10 +875,10 @@ func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			ls.editSwap()
 		} else if r == KeycodeCtrlU {
 			// delete the whole line
-			ls.delete_line()
+			ls.deleteLine()
 		} else if r == KeycodeCtrlW {
 			// delete previous word
-			ls.delete_prev_word()
+			ls.deletePrevWord()
 		} else {
 			// insert the character into the line buffer
 			ls.editInsert(r)
@@ -889,7 +889,7 @@ func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 //-----------------------------------------------------------------------------
 
 // Read a line from stdin in raw mode.
-func (l *Linenoise) read_raw(prompt, init string) (string, error) {
+func (l *Linenoise) readRaw(prompt, init string) (string, error) {
 	// set rawmode for stdin
 	l.enableRawMode(syscall.Stdin)
 	defer l.disableRawMode(syscall.Stdin)
@@ -900,7 +900,7 @@ func (l *Linenoise) read_raw(prompt, init string) (string, error) {
 }
 
 // Read a line using basic buffered IO.
-func (l *Linenoise) read_basic() (string, error) {
+func (l *Linenoise) readBasic() (string, error) {
 	if l.scanner == nil {
 		l.scanner = bufio.NewScanner(os.Stdin)
 	}
@@ -922,18 +922,18 @@ func (l *Linenoise) read_basic() (string, error) {
 func (l *Linenoise) Read(prompt, init string) (string, error) {
 	if !isatty.IsTerminal(uintptr(syscall.Stdin)) {
 		// Not a tty, read from a file or pipe.
-		return l.read_basic()
-	} else if unsupported_term() {
+		return l.readBasic()
+	} else if unsupportedTerm() {
 		// Not a terminal we know about, so basic line reading.
 		fmt.Printf(prompt)
-		s, err := l.read_basic()
+		s, err := l.readBasic()
 		if err == ErrQuit {
 			fmt.Printf("\n")
 		}
 		return s, err
 	} else {
 		// A command line on stdin, our raison d'etre.
-		return l.read_raw(prompt, init)
+		return l.readRaw(prompt, init)
 	}
 }
 
@@ -942,7 +942,7 @@ func (l *Linenoise) Read(prompt, init string) (string, error) {
 // Loop calls the provided function in a loop.
 // Exit when the function returns true or when the exit key is pressed.
 // Returns true when the loop function completes, false for early exit.
-func (l *Linenoise) Loop(fn func() bool, exit_key rune) bool {
+func (l *Linenoise) Loop(fn func() bool, exitKey rune) bool {
 
 	// set rawmode for stdin
 	err := l.enableRawMode(syscall.Stdin)
@@ -958,7 +958,7 @@ func (l *Linenoise) Loop(fn func() bool, exit_key rune) bool {
 	for looping {
 		// get a rune
 		r := u.getRune(syscall.Stdin, &timeout10ms)
-		if r == exit_key {
+		if r == exitKey {
 			// the loop has been cancelled
 			rc = false
 			looping = false
@@ -1046,12 +1046,12 @@ type Hint struct {
 
 // SetCompletionCallback sets the completion callback function.
 func (l *Linenoise) SetCompletionCallback(fn func(string) []string) {
-	l.completion_callback = fn
+	l.completionCallback = fn
 }
 
 // SetHintsCallback sets the hints callback function.
 func (l *Linenoise) SetHintsCallback(fn func(string) *Hint) {
-	l.hints_callback = fn
+	l.hintsCallback = fn
 }
 
 // SetMultiline sets multiline editing mode.
@@ -1094,7 +1094,7 @@ func (l *Linenoise) historyGet(idx int) string {
 }
 
 // Return the full history list.
-func (l *Linenoise) history_list() []string {
+func (l *Linenoise) historyList() []string {
 	return l.history
 }
 
@@ -1104,13 +1104,13 @@ func (l *Linenoise) historyNext(ls *linestate) string {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.historySet(ls.history_idx, ls.String())
-	ls.history_idx--
+	l.historySet(ls.historyIndex, ls.String())
+	ls.historyIndex--
 	// next history item
-	if ls.history_idx < 0 {
-		ls.history_idx = 0
+	if ls.historyIndex < 0 {
+		ls.historyIndex = 0
 	}
-	return l.historyGet(ls.history_idx)
+	return l.historyGet(ls.historyIndex)
 }
 
 // Return previous history item.
@@ -1119,18 +1119,18 @@ func (l *Linenoise) historyPrev(ls *linestate) string {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.historySet(ls.history_idx, ls.String())
-	ls.history_idx++
+	l.historySet(ls.historyIndex, ls.String())
+	ls.historyIndex++
 	// previous history item
-	if ls.history_idx >= len(l.history) {
-		ls.history_idx = len(l.history) - 1
+	if ls.historyIndex >= len(l.history) {
+		ls.historyIndex = len(l.history) - 1
 	}
-	return l.historyGet(ls.history_idx)
+	return l.historyGet(ls.historyIndex)
 }
 
 // HistoryAdd adds a new entry to the history.
 func (l *Linenoise) HistoryAdd(line string) {
-	if l.history_maxlen == 0 {
+	if l.historyMaxlen == 0 {
 		return
 	}
 	// don't add duplicate lines
@@ -1140,7 +1140,7 @@ func (l *Linenoise) HistoryAdd(line string) {
 		}
 	}
 	// add the line to the history
-	if len(l.history) == l.history_maxlen {
+	if len(l.history) == l.historyMaxlen {
 		// remove the first entry
 		l.historyPop(0)
 	}
@@ -1153,11 +1153,11 @@ func (l *Linenoise) HistorySetMaxlen(n int) {
 	if n < 0 {
 		return
 	}
-	l.history_maxlen = n
-	current_length := len(l.history)
-	if current_length > l.history_maxlen {
+	l.historyMaxlen = n
+	currentLength := len(l.history)
+	if currentLength > l.historyMaxlen {
 		// truncate and retain the latest history
-		l.history = l.history[current_length-l.history_maxlen:]
+		l.history = l.history[currentLength-l.historyMaxlen:]
 	}
 }
 
@@ -1194,7 +1194,7 @@ func (l *Linenoise) HistoryLoad(fname string) {
 		return
 	}
 	b := bufio.NewReader(f)
-	l.history = make([]string, 0, l.history_maxlen)
+	l.history = make([]string, 0, l.historyMaxlen)
 	for {
 		s, err := b.ReadString('\n')
 		if err == nil || err == io.EOF {
