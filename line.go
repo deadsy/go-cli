@@ -40,35 +40,35 @@ import (
 
 //-----------------------------------------------------------------------------
 
-const KEYCODE_NULL = 0
-const KEYCODE_CTRL_A = 1
-const KEYCODE_CTRL_B = 2
-const KEYCODE_CTRL_C = 3
-const KEYCODE_CTRL_D = 4
-const KEYCODE_CTRL_E = 5
-const KEYCODE_CTRL_F = 6
-const KEYCODE_CTRL_H = 8
-const KEYCODE_TAB = 9
-const KEYCODE_LF = 10
-const KEYCODE_CTRL_K = 11
-const KEYCODE_CTRL_L = 12
-const KEYCODE_CR = 13
-const KEYCODE_CTRL_N = 14
-const KEYCODE_CTRL_P = 16
-const KEYCODE_CTRL_T = 20
-const KEYCODE_CTRL_U = 21
-const KEYCODE_CTRL_W = 23
-const KEYCODE_ESC = 27
-const KEYCODE_BS = 127
+// Keycodes
+const (
+	KeycodeNull  = 0
+	KeycodeCtrlA = 1
+	KeycodeCtrlB = 2
+	KeycodeCtrlC = 3
+	KeycodeCtrlD = 4
+	KeycodeCtrlE = 5
+	KeycodeCtrlF = 6
+	KeycodeCtrlH = 8
+	KeycodeTAB   = 9
+	KeycodeLF    = 10
+	KeycodeCtrlK = 11
+	KeycodeCtrlL = 12
+	KeycodeCR    = 13
+	KeycodeCtrlN = 14
+	KeycodeCtrlP = 16
+	KeycodeCtrlT = 20
+	KeycodeCtrlU = 21
+	KeycodeCtrlW = 23
+	KeycodeESC   = 27
+	KeycodeBS    = 127
+)
 
-var STDIN = syscall.Stdin
-var STDOUT = syscall.Stdout
-var STDERR = syscall.Stderr
+var timeout20ms = syscall.Timeval{0, 20 * 1000}
+var timeout10ms = syscall.Timeval{0, 10 * 1000}
 
-var TIMEOUT_20ms = syscall.Timeval{0, 20 * 1000}
-var TIMEOUT_10ms = syscall.Timeval{0, 10 * 1000}
-
-var QUIT = errors.New("quit")
+// ErrQuit is returned when the user has quit line editing.
+var ErrQuit = errors.New("quit")
 
 //-----------------------------------------------------------------------------
 
@@ -84,34 +84,34 @@ func btoi(x bool) int {
 // control the terminal mode
 
 // Set a tty terminal to raw mode.
-func set_rawmode(fd int) (*raw.Termios, error) {
+func setRawMode(fd int) (*raw.Termios, error) {
 	// make sure this is a tty
 	if !isatty.IsTerminal(uintptr(fd)) {
 		return nil, fmt.Errorf("fd %d is not a tty", fd)
 	}
 	// get the terminal IO mode
-	original_mode, err := raw.TcGetAttr(uintptr(fd))
+	originalMode, err := raw.TcGetAttr(uintptr(fd))
 	if err != nil {
 		return nil, err
 	}
 	// modify the original mode
-	new_mode := *original_mode
-	new_mode.Iflag &^= (syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK | syscall.ISTRIP | syscall.INLCR | syscall.IGNCR | syscall.ICRNL | syscall.IXON)
-	new_mode.Oflag &^= syscall.OPOST
-	new_mode.Lflag &^= (syscall.ECHO | syscall.ECHONL | syscall.ICANON | syscall.ISIG | syscall.IEXTEN)
-	new_mode.Cflag &^= (syscall.CSIZE | syscall.PARENB)
-	new_mode.Cflag |= syscall.CS8
-	new_mode.Cc[syscall.VMIN] = 1
-	new_mode.Cc[syscall.VTIME] = 0
-	err = raw.TcSetAttr(uintptr(fd), &new_mode)
+	newMode := *originalMode
+	newMode.Iflag &^= (syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK | syscall.ISTRIP | syscall.INLCR | syscall.IGNCR | syscall.ICRNL | syscall.IXON)
+	newMode.Oflag &^= syscall.OPOST
+	newMode.Lflag &^= (syscall.ECHO | syscall.ECHONL | syscall.ICANON | syscall.ISIG | syscall.IEXTEN)
+	newMode.Cflag &^= (syscall.CSIZE | syscall.PARENB)
+	newMode.Cflag |= syscall.CS8
+	newMode.Cc[syscall.VMIN] = 1
+	newMode.Cc[syscall.VTIME] = 0
+	err = raw.TcSetAttr(uintptr(fd), &newMode)
 	if err != nil {
 		return nil, err
 	}
-	return original_mode, nil
+	return originalMode, nil
 }
 
 // Restore the terminal mode.
-func restore_mode(fd int, mode *raw.Termios) error {
+func restoreMode(fd int, mode *raw.Termios) error {
 	return raw.TcSetAttr(uintptr(fd), mode)
 }
 
@@ -119,10 +119,10 @@ func restore_mode(fd int, mode *raw.Termios) error {
 // UTF8 Decoding
 
 const (
-	UTF8_BYTE0 = iota
-	UTF8_3MORE
-	UTF8_2MORE
-	UTF8_1MORE
+	getByte0 = iota
+	get3More
+	get2More
+	get1More
 )
 
 type utf8 struct {
@@ -135,7 +135,7 @@ type utf8 struct {
 // Return the rune and it's size in bytes.
 func (u *utf8) add(c byte) (r rune, size int) {
 	switch u.state {
-	case UTF8_BYTE0:
+	case getByte0:
 		if c&0x80 == 0 {
 			// 1 byte
 			return rune(c), 1
@@ -143,51 +143,51 @@ func (u *utf8) add(c byte) (r rune, size int) {
 			// 2 byte
 			u.val = int32(c&0x1f) << 6
 			u.count = 2
-			u.state = UTF8_1MORE
-			return KEYCODE_NULL, 0
+			u.state = get1More
+			return KeycodeNull, 0
 		} else if c&0xf0 == 0xe0 {
 			// 3 bytes
 			u.val = int32(c&0x0f) << 6
 			u.count = 3
-			u.state = UTF8_2MORE
-			return KEYCODE_NULL, 0
+			u.state = get2More
+			return KeycodeNull, 0
 		} else if c&0xf8 == 0xf0 {
 			// 4 bytes
 			u.val = int32(c&0x07) << 6
 			u.count = 4
-			u.state = UTF8_3MORE
-			return KEYCODE_NULL, 0
+			u.state = get3More
+			return KeycodeNull, 0
 		}
-	case UTF8_3MORE:
+	case get3More:
 		if c&0xc0 == 0x80 {
-			u.state = UTF8_2MORE
+			u.state = get2More
 			u.val |= int32(c & 0x3f)
 			u.val <<= 6
-			return KEYCODE_NULL, 0
+			return KeycodeNull, 0
 		}
-	case UTF8_2MORE:
+	case get2More:
 		if c&0xc0 == 0x80 {
-			u.state = UTF8_1MORE
+			u.state = get1More
 			u.val |= int32(c & 0x3f)
 			u.val <<= 6
-			return KEYCODE_NULL, 0
+			return KeycodeNull, 0
 		}
-	case UTF8_1MORE:
+	case get1More:
 		if c&0xc0 == 0x80 {
-			u.state = UTF8_BYTE0
+			u.state = getByte0
 			u.val |= int32(c & 0x3f)
 			return rune(u.val), u.count
 		}
 	}
 	// Error
-	u.state = UTF8_BYTE0
+	u.state = getByte0
 	return unicode.ReplacementChar, 1
 }
 
 // read a single rune from a file descriptor (with timeout)
 // timeout >= 0 : wait for timeout seconds
 // timeout = nil : return immediately
-func (u *utf8) get_rune(fd int, timeout *syscall.Timeval) rune {
+func (u *utf8) getRune(fd int, timeout *syscall.Timeval) rune {
 	// use select() for the timeout
 	if timeout != nil {
 		rd := syscall.FdSet{}
@@ -198,7 +198,7 @@ func (u *utf8) get_rune(fd int, timeout *syscall.Timeval) rune {
 		}
 		if n == 0 {
 			// nothing is readable
-			return KEYCODE_NULL
+			return KeycodeNull
 		}
 	}
 	// Read the file descriptor
@@ -211,11 +211,11 @@ func (u *utf8) get_rune(fd int, timeout *syscall.Timeval) rune {
 	r, size := u.add(buf[0])
 	if size == 0 {
 		// incomplete utf8 code point
-		return KEYCODE_NULL
+		return KeycodeNull
 	}
 	if size == 1 && r == unicode.ReplacementChar {
 		// utf8 decode error
-		return KEYCODE_NULL
+		return KeycodeNull
 	}
 	return r
 }
@@ -246,7 +246,7 @@ func puts(fd int, s string) int {
 //-----------------------------------------------------------------------------
 
 // Use this value if we can't work out how many columns the terminal has.
-const DEFAULT_COLS = 80
+const defaultCols = 80
 
 // Get the horizontal cursor position
 func get_cursor_position(ifd, ofd int) int {
@@ -260,8 +260,8 @@ func get_cursor_position(ifd, ofd int) int {
 	u := utf8{}
 
 	for len(buf) < 32 {
-		r := u.get_rune(ifd, &TIMEOUT_20ms)
-		if r == KEYCODE_NULL {
+		r := u.getRune(ifd, &timeout20ms)
+		if r == KeycodeNull {
 			break
 		}
 		buf = append(buf, r)
@@ -270,7 +270,7 @@ func get_cursor_position(ifd, ofd int) int {
 		}
 	}
 	// parse it: esc [ number ; number R (at least 6 characters)
-	if len(buf) < 6 || buf[0] != KEYCODE_ESC || buf[1] != '[' || buf[len(buf)-1] != 'R' {
+	if len(buf) < 6 || buf[0] != KeycodeESC || buf[1] != '[' || buf[len(buf)-1] != 'R' {
 		return -1
 	}
 	// should have 2 number fields
@@ -286,26 +286,26 @@ func get_cursor_position(ifd, ofd int) int {
 	return cols
 }
 
-// Get the number of columns for the terminal. Assume DEFAULT_COLS if it fails.
-func get_columns(ifd, ofd int) int {
+// Get the number of columns for the terminal. Assume defaultCols if it fails.
+func getColumns(ifd, ofd int) int {
 	// try using the ioctl to get the number of cols
 	var winsize [4]uint16
-	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(STDOUT), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&winsize)))
+	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(syscall.Stdout), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&winsize)))
 	if err == 0 {
 		return int(winsize[1])
 	}
 	// the ioctl failed - try using the terminal itself
 	start := get_cursor_position(ifd, ofd)
 	if start < 0 {
-		return DEFAULT_COLS
+		return defaultCols
 	}
 	// Go to right margin and get position
 	if puts(ofd, "\x1b[999C") != 6 {
-		return DEFAULT_COLS
+		return defaultCols
 	}
 	cols := get_cursor_position(ifd, ofd)
 	if cols < 0 {
-		return DEFAULT_COLS
+		return defaultCols
 	}
 	// restore the position
 	if cols > start {
@@ -318,12 +318,12 @@ func get_columns(ifd, ofd int) int {
 
 // Clear the screen.
 func clear_screen() {
-	puts(STDOUT, "\x1b[H\x1b[2J")
+	puts(syscall.Stdout, "\x1b[H\x1b[2J")
 }
 
 // Beep.
 func beep() {
-	puts(STDERR, "\x07")
+	puts(syscall.Stderr, "\x07")
 }
 
 //-----------------------------------------------------------------------------
@@ -346,7 +346,7 @@ type linestate struct {
 	ifd, ofd     int        // stdin/stdout file descriptors
 	prompt       string     // prompt string
 	prompt_width int        // prompt width in terminal columns
-	ts           *linenoise // terminal state
+	ts           *Linenoise // terminal state
 	history_idx  int        // history index we are currently editing, 0 is the LAST entry
 	buf          []rune     // line buffer
 	cols         int        // number of columns in terminal
@@ -355,14 +355,14 @@ type linestate struct {
 	maxrows      int        // maximum num of rows used so far (multiline)
 }
 
-func NewLineState(ifd, ofd int, prompt string, ts *linenoise) *linestate {
+func newLineState(ifd, ofd int, prompt string, ts *Linenoise) *linestate {
 	ls := linestate{}
 	ls.ifd = ifd
 	ls.ofd = ofd
 	ls.prompt = prompt
 	ls.prompt_width = runewidth.StringWidth(prompt)
 	ls.ts = ts
-	ls.cols = get_columns(ifd, ofd)
+	ls.cols = getColumns(ifd, ofd)
 	return &ls
 }
 
@@ -386,9 +386,9 @@ func (ls *linestate) refresh_show_hints() []string {
 		return nil
 	}
 	// trim the hint until it fits
-	h_end := len(h.Hint)
-	for runewidth.StringWidth(h.Hint[:h_end]) > hint_cols {
-		h_end -= 1
+	hEnd := len(h.Hint)
+	for runewidth.StringWidth(h.Hint[:hEnd]) > hint_cols {
+		hEnd--
 	}
 	// color fixup
 	if h.Bold && h.Color < 0 {
@@ -399,7 +399,7 @@ func (ls *linestate) refresh_show_hints() []string {
 	if h.Color >= 0 || h.Bold {
 		seq = append(seq, fmt.Sprintf("\033[%d;%d;49m", btoi(h.Bold), h.Color))
 	}
-	seq = append(seq, h.Hint[:h_end])
+	seq = append(seq, h.Hint[:hEnd])
 	if h.Color >= 0 || h.Bold {
 		seq = append(seq, "\033[0m")
 	}
@@ -414,13 +414,13 @@ func (ls *linestate) refresh_singleline() {
 	// trim the left hand side to keep the cursor position on the screen
 	pos_width := runewidth.StringWidth(string(ls.buf[:ls.pos]))
 	for ls.prompt_width+pos_width >= ls.cols {
-		b_start += 1
+		b_start++
 		pos_width = runewidth.StringWidth(string(ls.buf[b_start:ls.pos]))
 	}
 	// trim the right hand side - don't print beyond max columns
 	buf_width := runewidth.StringWidth(string(ls.buf[b_start:b_end]))
 	for ls.prompt_width+buf_width >= ls.cols {
-		b_end -= 1
+		b_end--
 		buf_width = runewidth.StringWidth(string(ls.buf[b_start:b_end]))
 	}
 	// build the output string
@@ -474,7 +474,7 @@ func (ls *linestate) refresh_multiline() {
 	// emit a newline and move the prompt to the first column.
 	if ls.pos != 0 && ls.pos == buf_width && (ls.pos+ls.prompt_width)%ls.cols == 0 {
 		seq = append(seq, "\n\r")
-		rows += 1
+		rows++
 		if rows > ls.maxrows {
 			ls.maxrows = rows
 		}
@@ -508,7 +508,7 @@ func (ls *linestate) refresh_line() {
 }
 
 // delete the character at the current cursor position
-func (ls *linestate) edit_delete() {
+func (ls *linestate) editDelete() {
 	if len(ls.buf) > 0 && ls.pos < len(ls.buf) {
 		ls.buf = append(ls.buf[:ls.pos], ls.buf[ls.pos+1:]...)
 		ls.refresh_line()
@@ -516,59 +516,59 @@ func (ls *linestate) edit_delete() {
 }
 
 // delete the character to the left of the current cursor position
-func (ls *linestate) edit_backspace() {
+func (ls *linestate) editBackspace() {
 	if ls.pos > 0 && len(ls.buf) > 0 {
 		ls.buf = append(ls.buf[:ls.pos-1], ls.buf[ls.pos:]...)
-		ls.pos -= 1
+		ls.pos--
 		ls.refresh_line()
 	}
 }
 
 // insert a character at the current cursor position
-func (ls *linestate) edit_insert(r rune) {
+func (ls *linestate) editInsert(r rune) {
 	ls.buf = append(ls.buf[:ls.pos], append([]rune{r}, ls.buf[ls.pos:]...)...)
-	ls.pos += 1
+	ls.pos++
 	ls.refresh_line()
 }
 
 // Swap current character with the previous character.
-func (ls *linestate) edit_swap() {
+func (ls *linestate) editSwap() {
 	if ls.pos > 0 && ls.pos < len(ls.buf) {
 		tmp := ls.buf[ls.pos-1]
 		ls.buf[ls.pos-1] = ls.buf[ls.pos]
 		ls.buf[ls.pos] = tmp
 		if ls.pos != len(ls.buf)-1 {
-			ls.pos += 1
+			ls.pos++
 		}
 		ls.refresh_line()
 	}
 }
 
 // Set the line buffer to a string.
-func (ls *linestate) edit_set(s string) {
+func (ls *linestate) editSet(s string) {
 	ls.buf = []rune(s)
 	ls.pos = len(ls.buf)
 	ls.refresh_line()
 }
 
 // Move cursor on the left.
-func (ls *linestate) edit_move_left() {
+func (ls *linestate) editMoveLeft() {
 	if ls.pos > 0 {
-		ls.pos -= 1
+		ls.pos--
 		ls.refresh_line()
 	}
 }
 
 // Move cursor to the right.
-func (ls *linestate) edit_move_right() {
+func (ls *linestate) editMoveRight() {
 	if ls.pos != len(ls.buf) {
-		ls.pos += 1
+		ls.pos++
 		ls.refresh_line()
 	}
 }
 
 // Move to the start of the line buffer.
-func (ls *linestate) edit_move_home() {
+func (ls *linestate) editMoveHome() {
 	if ls.pos > 0 {
 		ls.pos = 0
 		ls.refresh_line()
@@ -576,7 +576,7 @@ func (ls *linestate) edit_move_home() {
 }
 
 // Move to the end of the line buffer.
-func (ls *linestate) edit_move_end() {
+func (ls *linestate) editMoveEnd() {
 	if ls.pos != len(ls.buf) {
 		ls.pos = len(ls.buf)
 		ls.refresh_line()
@@ -601,11 +601,11 @@ func (ls *linestate) delete_prev_word() {
 	old_pos := ls.pos
 	// remove spaces
 	for ls.pos > 0 && ls.buf[ls.pos-1] == ' ' {
-		ls.pos -= 1
+		ls.pos--
 	}
 	// remove word
 	for ls.pos > 0 && ls.buf[ls.pos-1] != ' ' {
-		ls.pos -= 1
+		ls.pos--
 	}
 	ls.buf = append(ls.buf[:ls.pos], ls.buf[old_pos:]...)
 	ls.refresh_line()
@@ -618,7 +618,7 @@ func (ls *linestate) complete_line() rune {
 	if len(lc) == 0 {
 		// no line completions
 		beep()
-		return KEYCODE_NULL
+		return KeycodeNull
 	}
 	// navigate and display the line completions
 	stop := false
@@ -642,26 +642,26 @@ func (ls *linestate) complete_line() rune {
 			ls.refresh_line()
 		}
 		// navigate through the completions
-		r = u.get_rune(ls.ifd, nil)
-		if r == KEYCODE_NULL {
+		r = u.getRune(ls.ifd, nil)
+		if r == KeycodeNull {
 			// error on read
 			stop = true
-		} else if r == KEYCODE_TAB {
+		} else if r == KeycodeTAB {
 			// loop through the completions
 			idx = (idx + 1) % (len(lc) + 1)
 			if idx == len(lc) {
 				beep()
 			}
-		} else if r == KEYCODE_ESC {
+		} else if r == KeycodeESC {
 			// could be an escape, could be an escape sequence
-			if would_block(ls.ifd, &TIMEOUT_20ms) {
+			if would_block(ls.ifd, &timeout20ms) {
 				// nothing more to read, looks like a single escape
 				// re-show the original buffer
 				if idx < len(lc) {
 					ls.refresh_line()
 				}
 				// don't pass the escape key back
-				r = KEYCODE_NULL
+				r = KeycodeNull
 			} else {
 				// probably an escape sequence
 				// update the buffer and return
@@ -691,39 +691,41 @@ func (ls *linestate) String() string {
 
 //-----------------------------------------------------------------------------
 
-type linenoise struct {
+// Linenoise stores line editor state.
+type Linenoise struct {
 	history             []string              // list of history strings
 	history_maxlen      int                   // maximum number of history entries
 	rawmode             bool                  // are we in raw mode?
 	mlmode              bool                  // are we in multiline mode?
-	saved_mode          *raw.Termios          // saved terminal mode
+	savedmode           *raw.Termios          // saved terminal mode
 	completion_callback func(string) []string // callback function for tab completion
 	hints_callback      func(string) *Hint    // callback function for hints
 	hotkey              rune                  // character for hotkey
 	scanner             *bufio.Scanner        // buffered IO scanner for file reading
 }
 
-func NewLineNoise() *linenoise {
-	l := linenoise{}
+// NewLineNoise returns a new line editor.
+func NewLineNoise() *Linenoise {
+	l := Linenoise{}
 	l.history_maxlen = 32
 	return &l
 }
 
 // Enable raw mode
-func (l *linenoise) enable_rawmode(fd int) error {
-	mode, err := set_rawmode(fd)
+func (l *Linenoise) enableRawMode(fd int) error {
+	mode, err := setRawMode(fd)
 	if err != nil {
 		return err
 	}
 	l.rawmode = true
-	l.saved_mode = mode
+	l.savedmode = mode
 	return nil
 }
 
 // Disable raw mode
-func (l *linenoise) disable_rawmode(fd int) error {
+func (l *Linenoise) disableRawMode(fd int) error {
 	if l.rawmode {
-		err := restore_mode(fd, l.saved_mode)
+		err := restoreMode(fd, l.savedmode)
 		if err != nil {
 			return err
 		}
@@ -735,31 +737,31 @@ func (l *linenoise) disable_rawmode(fd int) error {
 //-----------------------------------------------------------------------------
 
 // edit a line in raw mode
-func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
+func (l *Linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 	// create the line state
-	ls := NewLineState(ifd, ofd, prompt, l)
+	ls := newLineState(ifd, ofd, prompt, l)
 	// set and output the initial line
-	ls.edit_set(init)
+	ls.editSet(init)
 	// The latest history entry is always our current buffer
 	l.HistoryAdd(ls.String())
 
 	u := utf8{}
 
 	for {
-		r := u.get_rune(STDIN, nil)
-		if r == KEYCODE_NULL {
+		r := u.getRune(syscall.Stdin, nil)
+		if r == KeycodeNull {
 			continue
 		}
 		// Autocomplete when the callback is set.
 		// It returns the character to be handled next.
-		if r == KEYCODE_TAB && l.completion_callback != nil {
+		if r == KeycodeTAB && l.completion_callback != nil {
 			r = ls.complete_line()
-			if r == KEYCODE_NULL {
+			if r == KeycodeNull {
 				continue
 			}
 		}
-		if r == KEYCODE_CR || r == l.hotkey {
-			l.history_pop(-1)
+		if r == KeycodeCR || r == l.hotkey {
+			l.historyPop(-1)
 			if l.hints_callback != nil {
 				// Refresh the line without hints to leave the
 				// line as the user typed it after the newline.
@@ -771,116 +773,115 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 			s := ls.String()
 			if r == l.hotkey {
 				return s + string(l.hotkey), nil
-			} else {
-				return s, nil
 			}
-		} else if r == KEYCODE_BS {
+			return s, nil
+		} else if r == KeycodeBS {
 			// backspace: remove the character to the left of the cursor
-			ls.edit_backspace()
+			ls.editBackspace()
 
-		} else if r == KEYCODE_ESC {
-			if would_block(ifd, &TIMEOUT_20ms) {
+		} else if r == KeycodeESC {
+			if would_block(ifd, &timeout20ms) {
 				// looks like a single escape- abandon the line
-				l.history_pop(-1)
+				l.historyPop(-1)
 				return "", nil
 			}
 			// escape sequence
-			s0 := u.get_rune(ifd, &TIMEOUT_20ms)
-			s1 := u.get_rune(ifd, &TIMEOUT_20ms)
+			s0 := u.getRune(ifd, &timeout20ms)
+			s1 := u.getRune(ifd, &timeout20ms)
 			if s0 == '[' {
 				// ESC [ sequence
 				if s1 >= '0' && s1 <= '9' {
 					// Extended escape, read additional byte.
-					s2 := u.get_rune(ifd, &TIMEOUT_20ms)
+					s2 := u.getRune(ifd, &timeout20ms)
 					if s2 == '~' {
 						if s1 == '3' {
 							// delete
-							ls.edit_delete()
+							ls.editDelete()
 						}
 					}
 				} else {
 					if s1 == 'A' {
 						// cursor up
-						ls.edit_set(l.history_prev(ls))
+						ls.editSet(l.historyPrev(ls))
 					} else if s1 == 'B' {
 						// cursor down
-						ls.edit_set(l.history_next(ls))
+						ls.editSet(l.historyNext(ls))
 					} else if s1 == 'C' {
 						// cursor right
-						ls.edit_move_right()
+						ls.editMoveRight()
 					} else if s1 == 'D' {
 						// cursor left
-						ls.edit_move_left()
+						ls.editMoveLeft()
 					} else if s1 == 'H' {
 						// cursor home
-						ls.edit_move_home()
+						ls.editMoveHome()
 					} else if s1 == 'F' {
 						// cursor end
-						ls.edit_move_end()
+						ls.editMoveEnd()
 					}
 				}
 			} else if s0 == '0' {
 				// ESC 0 sequence
 				if s1 == 'H' {
 					// cursor home
-					ls.edit_move_home()
+					ls.editMoveHome()
 				} else if s1 == 'F' {
 					// cursor end
-					ls.edit_move_end()
+					ls.editMoveEnd()
 				}
 			}
-		} else if r == KEYCODE_CTRL_A {
+		} else if r == KeycodeCtrlA {
 			// go to the start of the line
-			ls.edit_move_home()
-		} else if r == KEYCODE_CTRL_B {
+			ls.editMoveHome()
+		} else if r == KeycodeCtrlB {
 			// cursor left
-			ls.edit_move_left()
-		} else if r == KEYCODE_CTRL_C {
+			ls.editMoveLeft()
+		} else if r == KeycodeCtrlC {
 			// return QUIT
-			return "", QUIT
-		} else if r == KEYCODE_CTRL_D {
+			return "", ErrQuit
+		} else if r == KeycodeCtrlD {
 			if len(ls.buf) > 0 {
 				// delete: remove the character to the right of the cursor.
-				ls.edit_delete()
+				ls.editDelete()
 			} else {
 				// nothing to delete - QUIT
-				l.history_pop(-1)
-				return "", QUIT
+				l.historyPop(-1)
+				return "", ErrQuit
 			}
-		} else if r == KEYCODE_CTRL_E {
+		} else if r == KeycodeCtrlE {
 			// go to the end of the line
-			ls.edit_move_end()
-		} else if r == KEYCODE_CTRL_F {
+			ls.editMoveEnd()
+		} else if r == KeycodeCtrlF {
 			// cursor right
-			ls.edit_move_right()
-		} else if r == KEYCODE_CTRL_H {
+			ls.editMoveRight()
+		} else if r == KeycodeCtrlH {
 			// backspace: remove the character to the left of the cursor
-			ls.edit_backspace()
-		} else if r == KEYCODE_CTRL_K {
+			ls.editBackspace()
+		} else if r == KeycodeCtrlK {
 			// delete to the end of the line
 			ls.delete_to_end()
-		} else if r == KEYCODE_CTRL_L {
+		} else if r == KeycodeCtrlL {
 			// clear screen
 			clear_screen()
 			ls.refresh_line()
-		} else if r == KEYCODE_CTRL_N {
+		} else if r == KeycodeCtrlN {
 			// next history item
-			ls.edit_set(l.history_next(ls))
-		} else if r == KEYCODE_CTRL_P {
+			ls.editSet(l.historyNext(ls))
+		} else if r == KeycodeCtrlP {
 			// previous history item
-			ls.edit_set(l.history_prev(ls))
-		} else if r == KEYCODE_CTRL_T {
+			ls.editSet(l.historyPrev(ls))
+		} else if r == KeycodeCtrlT {
 			// swap current character with the previous
-			ls.edit_swap()
-		} else if r == KEYCODE_CTRL_U {
+			ls.editSwap()
+		} else if r == KeycodeCtrlU {
 			// delete the whole line
 			ls.delete_line()
-		} else if r == KEYCODE_CTRL_W {
+		} else if r == KeycodeCtrlW {
 			// delete previous word
 			ls.delete_prev_word()
 		} else {
 			// insert the character into the line buffer
-			ls.edit_insert(r)
+			ls.editInsert(r)
 		}
 	}
 }
@@ -888,25 +889,25 @@ func (l *linenoise) edit(ifd, ofd int, prompt, init string) (string, error) {
 //-----------------------------------------------------------------------------
 
 // Read a line from stdin in raw mode.
-func (l *linenoise) read_raw(prompt, init string) (string, error) {
+func (l *Linenoise) read_raw(prompt, init string) (string, error) {
 	// set rawmode for stdin
-	l.enable_rawmode(STDIN)
-	defer l.disable_rawmode(STDIN)
+	l.enableRawMode(syscall.Stdin)
+	defer l.disableRawMode(syscall.Stdin)
 	// edit the line
-	s, err := l.edit(STDIN, STDOUT, prompt, init)
+	s, err := l.edit(syscall.Stdin, syscall.Stdout, prompt, init)
 	fmt.Printf("\r\n")
 	return s, err
 }
 
 // Read a line using basic buffered IO.
-func (l *linenoise) read_basic() (string, error) {
+func (l *Linenoise) read_basic() (string, error) {
 	if l.scanner == nil {
 		l.scanner = bufio.NewScanner(os.Stdin)
 	}
 	// scan a line
 	if !l.scanner.Scan() {
 		// EOF - return quit
-		return "", QUIT
+		return "", ErrQuit
 	}
 	// check for unexpected errors
 	err := l.scanner.Err()
@@ -918,15 +919,15 @@ func (l *linenoise) read_basic() (string, error) {
 }
 
 // Read a line. Return nil on EOF/quit.
-func (l *linenoise) Read(prompt, init string) (string, error) {
-	if !isatty.IsTerminal(uintptr(STDIN)) {
+func (l *Linenoise) Read(prompt, init string) (string, error) {
+	if !isatty.IsTerminal(uintptr(syscall.Stdin)) {
 		// Not a tty, read from a file or pipe.
 		return l.read_basic()
 	} else if unsupported_term() {
 		// Not a terminal we know about, so basic line reading.
 		fmt.Printf(prompt)
 		s, err := l.read_basic()
-		if err == QUIT {
+		if err == ErrQuit {
 			fmt.Printf("\n")
 		}
 		return s, err
@@ -938,13 +939,13 @@ func (l *linenoise) Read(prompt, init string) (string, error) {
 
 //-----------------------------------------------------------------------------
 
-// Call the provided function in a loop.
+// Loop calls the provided function in a loop.
 // Exit when the function returns true or when the exit key is pressed.
 // Returns true when the loop function completes, false for early exit.
-func (l *linenoise) Loop(fn func() bool, exit_key rune) bool {
+func (l *Linenoise) Loop(fn func() bool, exit_key rune) bool {
 
 	// set rawmode for stdin
-	err := l.enable_rawmode(STDIN)
+	err := l.enableRawMode(syscall.Stdin)
 	if err != nil {
 		log.Printf("enable rawmode error %s\n", err)
 		return false
@@ -956,7 +957,7 @@ func (l *linenoise) Loop(fn func() bool, exit_key rune) bool {
 
 	for looping {
 		// get a rune
-		r := u.get_rune(STDIN, &TIMEOUT_10ms)
+		r := u.getRune(syscall.Stdin, &timeout10ms)
 		if r == exit_key {
 			// the loop has been cancelled
 			rc = false
@@ -971,21 +972,21 @@ func (l *linenoise) Loop(fn func() bool, exit_key rune) bool {
 	}
 
 	// restore the terminal mode for stdin
-	l.disable_rawmode(STDIN)
+	l.disableRawMode(syscall.Stdin)
 	return rc
 }
 
 //-----------------------------------------------------------------------------
 // Key Code Debugging
 
-// Print scan codes on screen for debugging/development purposes
-func (l *linenoise) PrintKeycodes() {
+// PrintKeycodes prints scan codes on the screen for debugging/development purposes.
+func (l *Linenoise) PrintKeycodes() {
 
 	fmt.Printf("Linenoise key codes debugging mode.\n")
 	fmt.Printf("Press keys to see scan codes. Type 'quit' at any time to exit.\n")
 
 	// set rawmode for stdin
-	err := l.enable_rawmode(STDIN)
+	err := l.enableRawMode(syscall.Stdin)
 	if err != nil {
 		log.Printf("enable rawmode error %s\n", err)
 		return
@@ -997,8 +998,8 @@ func (l *linenoise) PrintKeycodes() {
 
 	for running {
 		// get a rune
-		r := u.get_rune(STDIN, nil)
-		if r == KEYCODE_NULL {
+		r := u.getRune(syscall.Stdin, nil)
+		if r == KeycodeNull {
 			continue
 		}
 		// display the character
@@ -1007,15 +1008,15 @@ func (l *linenoise) PrintKeycodes() {
 			s = string(r)
 		} else {
 			switch r {
-			case KEYCODE_CR:
+			case KeycodeCR:
 				s = "\\r"
-			case KEYCODE_TAB:
+			case KeycodeTAB:
 				s = "\\t"
-			case KEYCODE_ESC:
+			case KeycodeESC:
 				s = "ESC"
-			case KEYCODE_LF:
+			case KeycodeLF:
 				s = "\\n"
-			case KEYCODE_BS:
+			case KeycodeBS:
 				s = "BS"
 			default:
 				s = "?"
@@ -1031,35 +1032,36 @@ func (l *linenoise) PrintKeycodes() {
 	}
 
 	// restore the terminal mode for stdin
-	l.disable_rawmode(STDIN)
+	l.disableRawMode(syscall.Stdin)
 }
 
 //-----------------------------------------------------------------------------
 
+// Hint is used to provide hint information to the line editor.
 type Hint struct {
 	Hint  string
 	Color int
 	Bold  bool
 }
 
-// Set the completion callback function.
-func (l *linenoise) SetCompletionCallback(fn func(string) []string) {
+// SetCompletionCallback sets the completion callback function.
+func (l *Linenoise) SetCompletionCallback(fn func(string) []string) {
 	l.completion_callback = fn
 }
 
-// Set the hints callback function.
-func (l *linenoise) SetHintsCallback(fn func(string) *Hint) {
+// SetHintsCallback sets the hints callback function.
+func (l *Linenoise) SetHintsCallback(fn func(string) *Hint) {
 	l.hints_callback = fn
 }
 
-// Set multiline mode
-func (l *linenoise) SetMultiline(mode bool) {
+// SetMultiline sets multiline editing mode.
+func (l *Linenoise) SetMultiline(mode bool) {
 	l.mlmode = mode
 }
 
-// Set the hotkey. A hotkey will cause line editing to exit.
+// SetHotkey sets the hotkey that causes line editing to exit.
 // The hotkey will be appended to the line buffer but not displayed.
-func (l *linenoise) SetHotkey(key rune) {
+func (l *Linenoise) SetHotkey(key rune) {
 	l.hotkey = key
 }
 
@@ -1067,7 +1069,7 @@ func (l *linenoise) SetHotkey(key rune) {
 // Command History
 
 // pop an entry from the history list
-func (l *linenoise) history_pop(idx int) string {
+func (l *Linenoise) historyPop(idx int) string {
 	if idx < 0 {
 		// pop the last entry
 		idx = len(l.history) - 1
@@ -1082,52 +1084,52 @@ func (l *linenoise) history_pop(idx int) string {
 }
 
 // Set a history entry by index number.
-func (l *linenoise) history_set(idx int, line string) {
+func (l *Linenoise) historySet(idx int, line string) {
 	l.history[len(l.history)-1-idx] = line
 }
 
 // Get a history entry by index number.
-func (l *linenoise) history_get(idx int) string {
+func (l *Linenoise) historyGet(idx int) string {
 	return l.history[len(l.history)-1-idx]
 }
 
 // Return the full history list.
-func (l *linenoise) history_list() []string {
+func (l *Linenoise) history_list() []string {
 	return l.history
 }
 
 // Return next history item.
-func (l *linenoise) history_next(ls *linestate) string {
+func (l *Linenoise) historyNext(ls *linestate) string {
 	if len(l.history) == 0 {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.history_set(ls.history_idx, ls.String())
-	ls.history_idx -= 1
+	l.historySet(ls.history_idx, ls.String())
+	ls.history_idx--
 	// next history item
 	if ls.history_idx < 0 {
 		ls.history_idx = 0
 	}
-	return l.history_get(ls.history_idx)
+	return l.historyGet(ls.history_idx)
 }
 
 // Return previous history item.
-func (l *linenoise) history_prev(ls *linestate) string {
+func (l *Linenoise) historyPrev(ls *linestate) string {
 	if len(l.history) == 0 {
 		return ""
 	}
 	// update the current history entry with the line buffer
-	l.history_set(ls.history_idx, ls.String())
-	ls.history_idx += 1
+	l.historySet(ls.history_idx, ls.String())
+	ls.history_idx++
 	// previous history item
 	if ls.history_idx >= len(l.history) {
 		ls.history_idx = len(l.history) - 1
 	}
-	return l.history_get(ls.history_idx)
+	return l.historyGet(ls.history_idx)
 }
 
-// Add a new entry to the history
-func (l *linenoise) HistoryAdd(line string) {
+// HistoryAdd adds a new entry to the history.
+func (l *Linenoise) HistoryAdd(line string) {
 	if l.history_maxlen == 0 {
 		return
 	}
@@ -1140,14 +1142,14 @@ func (l *linenoise) HistoryAdd(line string) {
 	// add the line to the history
 	if len(l.history) == l.history_maxlen {
 		// remove the first entry
-		l.history_pop(0)
+		l.historyPop(0)
 	}
 	l.history = append(l.history, line)
 }
 
-// Set the maximum length for the history.
+// HistorySetMaxlen sets the maximum length for the history.
 // Truncate the current history if needed.
-func (l *linenoise) HistorySetMaxlen(n int) {
+func (l *Linenoise) HistorySetMaxlen(n int) {
 	if n < 0 {
 		return
 	}
@@ -1159,8 +1161,8 @@ func (l *linenoise) HistorySetMaxlen(n int) {
 	}
 }
 
-// Save the history to a file.
-func (l *linenoise) HistorySave(fname string) {
+// HistorySave saves the history to a file.
+func (l *Linenoise) HistorySave(fname string) {
 	if len(l.history) == 0 {
 		return
 	}
@@ -1176,8 +1178,8 @@ func (l *linenoise) HistorySave(fname string) {
 	f.Close()
 }
 
-// Load history from a file
-func (l *linenoise) HistoryLoad(fname string) {
+// HistoryLoad loads history from a file.
+func (l *Linenoise) HistoryLoad(fname string) {
 	info, err := os.Stat(fname)
 	if err != nil {
 		return

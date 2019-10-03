@@ -76,7 +76,7 @@ func main() {
 		os.Exit(0)
 	} else if *loopFlag {
 		fmt.Printf("looping: press ctrl-d to exit\n")
-		rc := l.Loop(loop, cli.KEYCODE_CTRL_D)
+		rc := l.Loop(loop, cli.KeycodeCtrlD)
 		if rc {
 			fmt.Printf("loop completed\n")
 		} else {
@@ -104,7 +104,7 @@ func main() {
 	for {
 		s, err := l.Read(prompt, "")
 		if err != nil {
-			if err == cli.QUIT {
+			if err == cli.ErrQuit {
 				break
 			}
 			log.Printf("%s\n", err)

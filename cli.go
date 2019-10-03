@@ -425,7 +425,7 @@ func (c *CLI) parse_cmdline(line string) string {
 
 type CLI struct {
 	User         USER       // user provided object
-	ln           *linenoise // line editing object
+	ln           *Linenoise // line editing object
 	root         Menu       // root of menu structure
 	current_line string     // current command line
 	next_line    string     // next line set by a leaf function

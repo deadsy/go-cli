@@ -59,7 +59,7 @@ var a0Func = cli.Leaf{
 		c.Put(fmt.Sprintf("a0 function arguments %v\n", args))
 		c.Put("Looping... Ctrl-D to exit\n")
 		loopIndex = 0
-		c.Loop(loop, cli.KEYCODE_CTRL_D)
+		c.Loop(loop, cli.KeycodeCtrlD)
 	},
 }
 
