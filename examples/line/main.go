@@ -21,8 +21,8 @@ import (
 
 //-----------------------------------------------------------------------------
 
-const KEY_HOTKEY = '?'
-const PROMPT = "つのだ☆hello> "
+const keyHotKey = '?'
+const prompt = "つのだ☆hello> "
 
 //-----------------------------------------------------------------------------
 
@@ -45,36 +45,36 @@ func hints(s string) *cli.Hint {
 
 //-----------------------------------------------------------------------------
 
-const LOOPS = 10
+const maxLoops = 10
 
-var loop_idx int
+var loopIndex int
 
 // example loop function - return true on completion
 func loop() bool {
-	fmt.Printf("loop index %d/%d\r\n", loop_idx, LOOPS)
+	fmt.Printf("loop index %d/%d\r\n", loopIndex, maxLoops)
 	time.Sleep(500 * time.Millisecond)
-	loop_idx += 1
-	return loop_idx > LOOPS
+	loopIndex++
+	return loopIndex > maxLoops
 }
 
 //-----------------------------------------------------------------------------
 
 func main() {
 
-	multiline_flag := flag.Bool("multiline", false, "enable multiline editing mode")
-	keycode_flag := flag.Bool("keycodes", false, "read and display keycodes")
-	loop_flag := flag.Bool("loop", false, "run a loop function with hotkey exit")
+	multilineFlag := flag.Bool("multiline", false, "enable multiline editing mode")
+	keycodeFlag := flag.Bool("keycodes", false, "read and display keycodes")
+	loopFlag := flag.Bool("loop", false, "run a loop function with hotkey exit")
 	flag.Parse()
 
 	l := cli.NewLineNoise()
 
-	if *multiline_flag {
+	if *multilineFlag {
 		l.SetMultiline(true)
 		fmt.Printf("Multi-line mode enabled.\n")
-	} else if *keycode_flag {
+	} else if *keycodeFlag {
 		l.PrintKeycodes()
 		os.Exit(0)
-	} else if *loop_flag {
+	} else if *loopFlag {
 		fmt.Printf("looping: press ctrl-d to exit\n")
 		rc := l.Loop(loop, cli.KEYCODE_CTRL_D)
 		if rc {
@@ -96,13 +96,13 @@ func main() {
 
 	// Set a hotkey. A hotkey will cause the line editing to exit. The hotkey
 	// will be appended to the returned line buffer but not displayed.
-	l.SetHotkey(KEY_HOTKEY)
+	l.SetHotkey(keyHotKey)
 
 	// This is the main loop of a typical linenoise-based application.
 	// The call to Read() will block until the user types something
 	// and presses enter or a hotkey.
 	for {
-		s, err := l.Read(PROMPT, "")
+		s, err := l.Read(prompt, "")
 		if err != nil {
 			if err == cli.QUIT {
 				break
@@ -129,8 +129,8 @@ func main() {
 			}
 		} else if len(s) > 0 {
 			fmt.Printf("echo: '%s' %d cols\n", s, runewidth.StringWidth(s))
-			if strings.HasSuffix(s, string(KEY_HOTKEY)) {
-				s = strings.TrimSuffix(s, string(KEY_HOTKEY))
+			if strings.HasSuffix(s, string(keyHotKey)) {
+				s = strings.TrimSuffix(s, string(keyHotKey))
 			}
 			l.HistoryAdd(s)
 			l.HistorySave("history.txt")
