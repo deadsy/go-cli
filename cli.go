@@ -136,11 +136,11 @@ func TableString(
 		}
 	}
 	// build the row format string
-	fmt_col := make([]string, ncols)
+	fmtCol := make([]string, ncols)
 	for i, n := range csize {
-		fmt_col[i] = fmt.Sprintf("%%-%ds", n)
+		fmtCol[i] = fmt.Sprintf("%%-%ds", n)
 	}
-	fmt_row := strings.Join(fmt_col, "")
+	fmtRow := strings.Join(fmtCol, "")
 	// generate the row strings
 	row := make([]string, nrows)
 	for i, l := range rows {
@@ -149,7 +149,7 @@ func TableString(
 		for j, v := range l {
 			x[j] = v
 		}
-		row[i] = fmt.Sprintf(fmt_row, x...)
+		row[i] = fmt.Sprintf(fmtRow, x...)
 	}
 	// return rows and columns
 	return strings.Join(row, "\n")
@@ -169,7 +169,7 @@ func repeat(r rune, n int) string {
 //-----------------------------------------------------------------------------
 
 // Split a string on whitespace and return the substring indices.
-func split_index(s string) [][2]int {
+func splitIndex(s string) [][2]int {
 	// start and end with whitespace
 	ws := true
 	s += " "
@@ -211,7 +211,7 @@ func completions(line, cmd string, names []string, minlen int) []string {
 }
 
 // Return a list of menu names.
-func menu_names(menu Menu) []string {
+func menuNames(menu Menu) []string {
 	s := make([]string, len(menu))
 	for i := range menu {
 		s[i] = menu[i][0].(string)
@@ -222,7 +222,7 @@ func menu_names(menu Menu) []string {
 //-----------------------------------------------------------------------------
 
 // Display a parse error string.
-func (c *CLI) display_error(msg string, cmds []string, idx int) {
+func (c *CLI) displayError(msg string, cmds []string, idx int) {
 	marker := make([]string, len(cmds))
 	for i := range cmds {
 		n := runewidth.StringWidth(cmds[i])
@@ -237,23 +237,23 @@ func (c *CLI) display_error(msg string, cmds []string, idx int) {
 }
 
 // display function help
-func (c *CLI) display_function_help(help []Help) {
+func (c *CLI) displayFunctionHelp(help []Help) {
 	s := make([][]string, len(help))
 	for i := range s {
-		p_str := help[i].Parm
-		var d_str string
-		if len(p_str) != 0 {
-			d_str = fmt.Sprintf(": %s", help[i].Descr)
+		pStr := help[i].Parm
+		var dStr string
+		if len(pStr) != 0 {
+			dStr = fmt.Sprintf(": %s", help[i].Descr)
 		} else {
-			d_str = fmt.Sprintf("  %s", help[i].Descr)
+			dStr = fmt.Sprintf("  %s", help[i].Descr)
 		}
-		s[i] = []string{"   ", p_str, d_str}
+		s[i] = []string{"   ", pStr, dStr}
 	}
 	c.Put(TableString(s, []int{0, 16, 0}, 1) + "\n")
 }
 
 // display help results for a command at a menu level
-func (c *CLI) command_help(cmd string, menu Menu) {
+func (c *CLI) commandHelp(cmd string, menu Menu) {
 	s := make([][]string, 0, len(menu))
 	for _, item := range menu {
 		name := item[0].(string)
@@ -276,26 +276,26 @@ func (c *CLI) command_help(cmd string, menu Menu) {
 }
 
 // display help for a leaf function
-func (c *CLI) function_help(item MenuItem) {
+func (c *CLI) functionHelp(item MenuItem) {
 	var help []Help
 	if len(item) == 3 {
 		help = item[2].([]Help)
 	} else {
 		help = crHelp
 	}
-	c.display_function_help(help)
+	c.displayFunctionHelp(help)
 }
 
 // Return a slice of line completion strings for the command line.
-func (c *CLI) completion_callback(cmd_line string) []string {
+func (c *CLI) completionCallback(cmdLine string) []string {
 	line := ""
 	// split the command line into a list of command indices
-	cmd_indices := split_index(cmd_line)
+	cmdIndices := splitIndex(cmdLine)
 	// trace each command through the menu tree
 	menu := c.root
-	for _, index := range cmd_indices {
-		cmd := cmd_line[index[0]:index[1]]
-		line = cmd_line[:index[1]]
+	for _, index := range cmdIndices {
+		cmd := cmdLine[index[0]:index[1]]
+		line = cmdLine[:index[1]]
 		// How many items does this token match at this level of the menu?
 		matches := make([]MenuItem, 0, len(menu))
 		for _, item := range menu {
@@ -310,7 +310,7 @@ func (c *CLI) completion_callback(cmd_line string) []string {
 			item := matches[0]
 			if len(cmd) < len(item[0].(string)) {
 				// it's an unambiguous single match, but we still complete it
-				return completions(line, cmd, menu_names(matches), len(cmd_line))
+				return completions(line, cmd, menuNames(matches), len(cmdLine))
 			}
 			// we have the whole command - is this a submenu or leaf?
 			if submenu, ok := item[1].(Menu); ok {
@@ -323,13 +323,13 @@ func (c *CLI) completion_callback(cmd_line string) []string {
 			}
 		} else {
 			// Multiple matches at this level. Return the matches.
-			return completions(line, cmd, menu_names(matches), len(cmd_line))
+			return completions(line, cmd, menuNames(matches), len(cmdLine))
 		}
 	}
 	// We've made it here without returning a completion list.
 	// The prior set of tokens have all matched single submenu items.
 	// The completions are all of the items at the current menu level.
-	return completions(line, "", menu_names(menu), len(cmd_line))
+	return completions(line, "", menuNames(menu), len(cmdLine))
 }
 
 // Parse and process the current command line.
@@ -337,24 +337,24 @@ func (c *CLI) completion_callback(cmd_line string) []string {
 // The return string is generally empty, but may be non-empty for command history.
 func (c *CLI) parseCmdline(line string) string {
 	// scan the command line into a list of tokens
-	cmd_list := make([]string, 0, 8)
+	cmdList := make([]string, 0, 8)
 	for _, s := range strings.Split(line, " ") {
 		if len(s) != 0 {
-			cmd_list = append(cmd_list, s)
+			cmdList = append(cmdList, s)
 		}
 	}
 	// if there are no commands, print a new empty prompt
-	if len(cmd_list) == 0 {
+	if len(cmdList) == 0 {
 		return ""
 	}
 	// trace each command through the menu tree
 	menu := c.root
-	for idx, cmd := range cmd_list {
+	for idx, cmd := range cmdList {
 		// A trailing '?' means the user wants help for this command
 		if cmd[len(cmd)-1] == '?' {
 			// strip off the '?'
 			cmd = cmd[:len(cmd)-1]
-			c.command_help(cmd, menu)
+			c.commandHelp(cmd, menu)
 			// strip off the '?' and recycle the command
 			return line[:len(line)-1]
 		}
@@ -372,7 +372,7 @@ func (c *CLI) parseCmdline(line string) string {
 		}
 		if len(matches) == 0 {
 			// no matches - unknown command
-			c.display_error("unknown command", cmd_list, idx)
+			c.displayError("unknown command", cmdList, idx)
 			// add it to history in case the user wants to edit this junk
 			c.ln.HistoryAdd(strings.TrimSpace(line))
 			// go back to an empty prompt
@@ -387,11 +387,11 @@ func (c *CLI) parseCmdline(line string) string {
 				continue
 			} else {
 				// leaf function - get the arguments
-				args := cmd_list[idx+1:]
+				args := cmdList[idx+1:]
 				if len(args) != 0 {
-					last_arg := args[len(args)-1]
-					if last_arg[len(last_arg)-1] == '?' {
-						c.function_help(item)
+					lastArg := args[len(args)-1]
+					if lastArg[len(lastArg)-1] == '?' {
+						c.functionHelp(item)
 						// strip off the '?', repeat the command
 						return line[:len(line)-1]
 					}
@@ -400,9 +400,9 @@ func (c *CLI) parseCmdline(line string) string {
 				leaf := item[1].(Leaf).F
 				leaf(c, args)
 				// post leaf function actions
-				if c.next_line != "" {
-					s := c.next_line
-					c.next_line = ""
+				if c.nextLine != "" {
+					s := c.nextLine
+					c.nextLine = ""
 					return s
 				}
 				// add the command to history
@@ -412,7 +412,7 @@ func (c *CLI) parseCmdline(line string) string {
 			}
 		} else {
 			// multiple matches - ambiguous command
-			c.display_error("ambiguous command", cmd_list, idx)
+			c.displayError("ambiguous command", cmdList, idx)
 			return ""
 		}
 	}
@@ -429,7 +429,7 @@ type CLI struct {
 	ln          *Linenoise // line editing object
 	root        Menu       // root of menu structure
 	currentLine string     // current command line
-	next_line   string     // next line set by a leaf function
+	nextLine    string     // next line set by a leaf function
 	prompt      string     // cli prompt string
 	running     bool       // is the cli running?
 }
@@ -439,7 +439,7 @@ func NewCLI(user USER) *CLI {
 	c := CLI{}
 	c.User = user
 	c.ln = NewLineNoise()
-	c.ln.SetCompletionCallback(c.completion_callback)
+	c.ln.SetCompletionCallback(c.completionCallback)
 	c.ln.SetHotkey('?')
 	c.prompt = "> "
 	c.running = true
@@ -458,12 +458,12 @@ func (c *CLI) SetPrompt(prompt string) {
 
 // SetLine sets the next command line.
 func (c *CLI) SetLine(line string) {
-	c.next_line = line
+	c.nextLine = line
 }
 
 // Loop is a passthrough to the wait for hotkey Loop().
-func (c *CLI) Loop(fn func() bool, exit_key rune) bool {
-	return c.ln.Loop(fn, exit_key)
+func (c *CLI) Loop(fn func() bool, exitKey rune) bool {
+	return c.ln.Loop(fn, exitKey)
 }
 
 // Put is a passthrough to the user provided Put().
@@ -473,7 +473,7 @@ func (c *CLI) Put(s string) {
 
 // GeneralHelp displays general help.
 func (c *CLI) GeneralHelp() {
-	c.display_function_help(generalHelp)
+	c.displayFunctionHelp(generalHelp)
 }
 
 // HistoryLoad loads command history from a file.

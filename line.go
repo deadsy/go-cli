@@ -481,7 +481,7 @@ func (ls *linestate) refreshMultiline() {
 	}
 	// Move cursor to right position.
 	rpos2 := (ls.promptWidth + ls.pos + ls.cols) / ls.cols // current cursor relative row.
-	// Go up till we reach the expected positon.
+	// Go up till we reach the expected position.
 	if rows-rpos2 > 0 {
 		seq = append(seq, fmt.Sprintf("\x1b[%dA", rows-rpos2))
 	}

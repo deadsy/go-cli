@@ -13,7 +13,7 @@ func Test_DisplayCols(t *testing.T) {
 	t.Logf("\n%s\n", TableString(clist, nil, 1))
 }
 
-func index_compare(a, b [][2]int) bool {
+func indexCompare(a, b [][2]int) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -28,7 +28,7 @@ func index_compare(a, b [][2]int) bool {
 	return true
 }
 
-func Test_Split_Index(t *testing.T) {
+func Test_SplitIndex(t *testing.T) {
 	tests := []struct {
 		s string
 		r [][2]int
@@ -38,8 +38,8 @@ func Test_Split_Index(t *testing.T) {
 		{"a", [][2]int{{0, 1}}},
 	}
 	for i, v := range tests {
-		r := split_index(v.s)
-		if !index_compare(r, v.r) {
+		r := splitIndex(v.s)
+		if !indexCompare(r, v.r) {
 			t.Errorf("%d: FAIL expected (%v) != actual (%v)", i, v.r, r)
 		}
 	}
