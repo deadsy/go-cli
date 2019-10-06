@@ -76,24 +76,32 @@ var HistoryHelp = []Help{
 }
 
 //-----------------------------------------------------------------------------
-
-const invArg = "invalid argument\n"
+// argument processing
 
 // IntArg converts a number string to an integer.
-func IntArg(user USER, arg string, limits [2]int, base int) (int, error) {
+func IntArg(arg string, limits [2]int, base int) (int, error) {
 	// convert the integer
 	x, err := strconv.ParseInt(arg, base, 64)
 	if err != nil {
-		user.Put(invArg)
-		return 0, err
+		return 0, errors.New("invalid argument")
 	}
 	// check the limits
 	val := int(x)
 	if val < limits[0] || val > limits[1] {
-		user.Put(invArg)
-		return 0, errors.New("out of range")
+		return 0, errors.New("invalid argument, out of range")
 	}
 	return val, nil
+}
+
+// CheckArgc returns an error if the argument count is not in the valid set.
+func CheckArgc(args []string, valid []int) error {
+	argc := len(args)
+	for i := range valid {
+		if argc == valid[i] {
+			return nil
+		}
+	}
+	return errors.New("bad number of arguments")
 }
 
 //-----------------------------------------------------------------------------
@@ -493,8 +501,9 @@ func (c *CLI) DisplayHistory(args []string) string {
 	n := len(h)
 	if len(args) == 1 {
 		// retrieve a specific history entry
-		idx, err := IntArg(c.User, args[0], [2]int{0, n - 1}, 10)
+		idx, err := IntArg(args[0], [2]int{0, n - 1}, 10)
 		if err != nil {
+			c.User.Put(fmt.Sprintf("%s\n", err))
 			return ""
 		}
 		// Return the next line buffer.
