@@ -1133,11 +1133,9 @@ func (l *Linenoise) HistoryAdd(line string) {
 	if l.historyMaxlen == 0 {
 		return
 	}
-	// don't add duplicate lines
-	for _, s := range l.history {
-		if s == line {
-			return
-		}
+	// don't re-add the last entry
+	if len(l.history) != 0 && line == l.history[len(l.history)-1] {
+		return
 	}
 	// add the line to the history
 	if len(l.history) == l.historyMaxlen {
