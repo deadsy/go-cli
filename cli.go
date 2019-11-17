@@ -93,6 +93,21 @@ func IntArg(arg string, limits [2]int, base int) (int, error) {
 	return val, nil
 }
 
+// UintArg converts a number string to an unsigned integer.
+func UintArg(arg string, limits [2]uint, base int) (uint, error) {
+	// convert the integer
+	x, err := strconv.ParseUint(arg, base, 64)
+	if err != nil {
+		return 0, errors.New("invalid argument")
+	}
+	// check the limits
+	val := uint(x)
+	if val < limits[0] || val > limits[1] {
+		return 0, errors.New("invalid argument, out of range")
+	}
+	return val, nil
+}
+
 // CheckArgc returns an error if the argument count is not in the valid set.
 func CheckArgc(args []string, valid []int) error {
 	argc := len(args)
