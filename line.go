@@ -65,7 +65,7 @@ const (
 )
 
 var timeout20ms = syscall.Timeval{0, 20 * 1000}
-var timeout10ms = syscall.Timeval{0, 10 * 1000}
+var timeoutZero = syscall.Timeval{0, 0}
 
 // ErrQuit is returned when the user has quit line editing.
 var ErrQuit = errors.New("quit")
@@ -190,15 +190,18 @@ func (u *utf8) add(c byte) (r rune, size int) {
 func (u *utf8) getRune(fd int, timeout *syscall.Timeval) rune {
 	// use select() for the timeout
 	if timeout != nil {
-		rd := syscall.FdSet{}
-		fdset.Set(fd, &rd)
-		n, err := syscall.Select(fd+1, &rd, nil, nil, timeout)
-		if err != nil {
-			panic(fmt.Sprintf("select error %s\n", err))
-		}
-		if n == 0 {
-			// nothing is readable
-			return KeycodeNull
+		for true {
+			rd := syscall.FdSet{}
+			fdset.Set(fd, &rd)
+			n, err := syscall.Select(fd+1, &rd, nil, nil, timeout)
+			if err != nil {
+				continue
+			}
+			if n == 0 {
+				// nothing is readable
+				return KeycodeNull
+			}
+			break
 		}
 	}
 	// Read the file descriptor
@@ -957,7 +960,7 @@ func (l *Linenoise) Loop(fn func() bool, exitKey rune) bool {
 
 	for looping {
 		// get a rune
-		r := u.getRune(syscall.Stdin, &timeout10ms)
+		r := u.getRune(syscall.Stdin, &timeoutZero)
 		if r == exitKey {
 			// the loop has been cancelled
 			rc = false
